@@ -11,7 +11,6 @@ for i in range(1,43+1,1):#len(list_of_labels)):
     
     #Image #1: dim = [512, 512, 210];  bb = {[0 0 0], [439.296 439.296 210]};  vox = [0.858, 0.858, 1];  range = [-2048, 1371];  orient = RPS
 
-    
     list_id = int(df1.loc[i-1,:]['original_id'])
     new_id = int(df1.loc[i-1,:]['id'])
     
@@ -73,5 +72,3 @@ for i in range(1,43+1,1):#len(list_of_labels)):
     #line = (out.splitlines()[1])
     #series_id = str.split(line)[-1]
     #print('reading series_id',series_id)
-
-
