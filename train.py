@@ -43,7 +43,7 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/train_log")
+                        default="output/train")
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 

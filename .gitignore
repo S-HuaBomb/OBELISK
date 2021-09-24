@@ -5,3 +5,4 @@ raw_dicom_pancreasCT/*
 train.slurm
 test.slurm
 __pycache__
+output/*
