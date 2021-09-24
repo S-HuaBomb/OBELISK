@@ -27,7 +27,7 @@ for i in range(1,43+1,1):#len(list_of_labels)):
     #print(line)
     dim_z = int(str.split(line)[6][:-2])
     print('dimension_str',dim_z)
-    
+
     print(df1.loc[i-1,:])
     #print(df1.loc[i-1,:]['extent_ant'])
     
@@ -38,7 +38,7 @@ for i in range(1,43+1,1):#len(list_of_labels)):
     A5 = int(df1.loc[i-1,:]['extent_inf'])
     A6 = int(df1.loc[i-1,:]['extent_sup'])
     
-#    region1 = str(A3)+'x'+str(512-A2)+'x'+str(A5)+'vox '+str(A4-A3)+'x'+str(A2-A1)+'x'+str(A6-A5)+'vox'
+    # region1 = str(A3)+'x'+str(512-A2)+'x'+str(A5)+'vox '+str(A4-A3)+'x'+str(A2-A1)+'x'+str(A6-A5)+'vox'
     region1 = str(A3)+'x'+str(512-A2)+'x'+str(dim_z-A6)+'vox '+str(A4-A3)+'x'+str(A2-A1)+'x'+str(A6-A5)+'vox'
     print('region',region1)
     
