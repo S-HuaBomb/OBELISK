@@ -6,3 +6,4 @@ train.slurm
 test.slurm
 __pycache__
 output/*
+logs/*
