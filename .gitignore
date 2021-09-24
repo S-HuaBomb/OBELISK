@@ -3,3 +3,5 @@ preprocess/datasets/*
 raw_dicom_pancreasCT/*
 *.nii.gz
 train.slurm
+test.slurm
+__pycache__
