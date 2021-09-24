@@ -43,7 +43,7 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/train")
+                        default="output/obeliskhybrid_tcia")
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 
@@ -99,7 +99,7 @@ def main():
     W_in1 = imgs.size(4)  # full resolution
     full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
 
-    net = obeliskhybrid_tcia(num_labels)
+    net = obeliskhybrid_tcia(num_labels)  # 默认 obeliskhybrid_tcia
     net.apply(init_weights)
     print('obelisk params', countParam(net))
 
