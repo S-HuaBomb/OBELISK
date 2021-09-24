@@ -1,2 +1,5 @@
 preprocess/datasets/*
 .idea
+raw_dicom_pancreasCT/*
+*.nii.gz
+train.slurm
