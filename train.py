@@ -170,7 +170,7 @@ def main():
                 torch.cuda.synchronize()
                 time_i = (time.time() - t0)
                 dice_all = dice_coeff(argmax.cpu(), segs[testNo:testNo + 1, :, :, :], num_labels)
-                dice_epoch[testNo, :, epoch] = dice_all.numpy()
+                dice_epoch[testNo, :, epoch] = dice_all
                 # del output_test
                 del predict
                 del imgs_cuda
