@@ -4,6 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.utils.data import DataLoader
+
 import time
 import os
 import sys
@@ -15,7 +17,7 @@ import argparse
 
 cuda_idx = 0
 
-from utils import init_weights, countParam, augmentAffine, my_ohem, dice_coeff, Logger
+from utils import init_weights, countParam, augmentAffine, my_ohem, dice_coeff, Logger, MyDataset
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
 
@@ -55,8 +57,6 @@ def main():
     sys.stdout = Logger(d_options['output'] + '_log.txt')
 
     # load train images and segmentations
-    imgs = []
-    segs = []
     scannumbers = d_options['scannumbers']
     print('scannumbers:', scannumbers)
     if d_options['filescan'].find("?") == -1:
@@ -66,58 +66,65 @@ def main():
     file_cts = d_options['filescan']
     file_labels = d_options['fileseg']
 
-    for i in scannumbers:
-        # /share/data_rechenknecht01_1/heinrich/TCIA_CT
-        filescan1 = file_cts.replace("?", str(i))
-        img = nib.load(os.path.join(d_options['ctfolder'], filescan1)).get_data()
+    train_dataset = MyDataset(image_folder=d_options['ctfolder'],
+                           image_name=file_cts,
+                           label_folder=d_options['labelfolder'],
+                           label_name=file_labels,
+                           scannumbers=scannumbers)
 
-        fileseg1 = file_labels.replace("?", str(i))
-        seg = nib.load(os.path.join(d_options['labelfolder'], fileseg1)).get_data()
+    val_dataset = MyDataset(image_folder=d_options['ctfolder'],
+                           image_name=file_cts,
+                           label_folder=d_options['labelfolder'],
+                           label_name=file_labels,
+                           scannumbers=[1, 2, 3, 4, 5])
 
-        imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())
-        segs.append(torch.from_numpy(seg).unsqueeze(0).long())
-
-    imgs = torch.cat(imgs, 0)
-    segs = torch.cat(segs, 0)
-    imgs = imgs / 1024.0 + 1.0  # scale data
-
-    numEpoches = 300  # 1000
-    batchSize = 4
+    train_loader = DataLoader(dataset=train_dataset, batch_size=4, shuffle=True)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=4)
+    # for i in scannumbers:
+    #     # /share/data_rechenknecht01_1/heinrich/TCIA_CT
+    #     filescan1 = file_cts.replace("?", str(i))
+    #     img = nib.load(os.path.join(d_options['ctfolder'], filescan1)).get_data()
+    #
+    #     fileseg1 = file_labels.replace("?", str(i))
+    #     seg = nib.load(os.path.join(d_options['labelfolder'], fileseg1)).get_data()
+    #
+    #     imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())
+    #     segs.append(torch.from_numpy(seg).unsqueeze(0).long())
+    #
+    # imgs = torch.cat(imgs, 0)
+    # segs = torch.cat(segs, 0)
+    # imgs = imgs / 1024.0 + 1.0  # scale data
+    # numEpoches = 300  # 1000
 
     print('data loaded')
 
-    class_weight = torch.sqrt(1.0 / (torch.bincount(segs.view(-1)).float()))
+    class_weight = my_dataset.get_class_weight()
     class_weight = class_weight / class_weight.mean()
     class_weight[0] = 0.5
     np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-    print('inv sqrt class_weight', class_weight.data.cpu().numpy())
+    print('inv sqrt class_weight', class_weight.data.cpu().numpy())  # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
 
     num_labels = int(class_weight.numel())
 
-    D_in1 = imgs.size(2)
-    H_in1 = imgs.size(3)
-    W_in1 = imgs.size(4)  # full resolution
-    full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
-
     net = obeliskhybrid_tcia(num_labels)  # 默认 obeliskhybrid_tcia
     net.apply(init_weights)
-    print('obelisk params', countParam(net))
+    print('obelisk params', countParam(net))  # obelisk params 229217
 
-    print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))
-    net.cuda(cuda_idx)
+    print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))  # initial offset std 0.047
+    # net.cuda(cuda_idx)
 
     # criterion = nn.CrossEntropyLoss()#
-    my_criterion = my_ohem(.25, class_weight.cuda())  # 0.25
+    my_criterion = my_ohem(.25, class_weight.cuda())  # 0.25 .cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=0.002, weight_decay=0.00001)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
 
     run_loss = np.zeros(300)
 
-    dice_epoch = np.zeros((imgs.size(0), num_labels - 1, 300))
-    fold_size = imgs.size(0)
-    fold_size4 = fold_size - fold_size % 4
-    print('fold/batch sizes', fold_size, fold_size4, imgs.size(0))
+    dice_epoch = np.zeros((len(my_dataset), num_labels - 1, 300))
+    # fold_size = imgs.size(0)  # total imgs num, 33
+    # fold_size4 = fold_size - fold_size % 4  # trop last
+    print('dataset sizes', len(my_dataset))
     # for loop over iterations and epochs
     for epoch in range(300):
 
@@ -126,15 +133,18 @@ def main():
         run_loss[epoch] = 0.0
         t1 = 0.0
 
-        idx_epoch = torch.randperm(fold_size)[:fold_size4].view(4, -1)
+        # idx_epoch = torch.randperm(fold_size)[:fold_size4].view(4, -1)  # 4 x 8 Tensor
+        # print(f"idx_epoch: {idx_epoch}")
         t0 = time.time()
 
-        for iter in range(idx_epoch.size(1)):
-            idx = idx_epoch[:, iter]
-
+        # for iter in range(idx_epoch.size(1)):
+            # idx = idx_epoch[:, iter]
+            # print(f"idx from idx_epoch: {idx}")  # 4 x 1 = 4 = batch size
+        for imgs, segs in train_loader:
             with torch.no_grad():
-                imgs_cuda, y_label = augmentAffine(imgs[idx, :, :, :, :].cuda(), segs[idx, :, :, :].cuda(),
-                                                   strength=0.075)
+                # imgs_cuda, y_label = augmentAffine(imgs[idx, :, :, :, :].cuda(), segs[idx, :, :, :].cuda(),
+                #                                    strength=0.075)
+                imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)  # .cuda()
                 torch.cuda.empty_cache()
 
             optimizer.zero_grad()
@@ -160,17 +170,18 @@ def main():
         net.eval()
 
         if epoch % 3 == 0:
-            for testNo in range(imgs.size(0)):
-                imgs_cuda = (imgs[testNo:testNo + 1, :, :, :, :]).cuda()
-
+            # for testNo in range(imgs.size(0)):
+            #     imgs_cuda = (imgs[testNo:testNo + 1, :, :, :, :]).cuda()
+            for val_idx, imgs, segs in enumerate(val_loader):
+                imgs_cuda = imgs.cuda()
                 t0 = time.time()
                 predict = net(imgs_cuda)
 
                 argmax = torch.max(predict, dim=1)[1]
                 torch.cuda.synchronize()
                 time_i = (time.time() - t0)
-                dice_all = dice_coeff(argmax.cpu(), segs[testNo:testNo + 1, :, :, :], num_labels)
-                dice_epoch[testNo, :, epoch] = dice_all
+                dice_all = dice_coeff(argmax.cpu(), segs, num_labels)
+                dice_epoch[val_idx, :, epoch] = dice_all
                 # del output_test
                 del predict
                 del imgs_cuda

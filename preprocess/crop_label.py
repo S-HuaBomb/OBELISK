@@ -4,7 +4,7 @@ import nibabel as nib
 
 
 def convert_label(raw_labels_p):
-    for label in os.listdir(raw_labels_p):
+    for label in sorted(os.listdir(raw_labels_p)):
         label_pth = os.path.join(raw_labels_p, label)
         nib_img = nib.load(label_pth)
         img_affine = nib_img.affine
@@ -22,4 +22,5 @@ def convert_label(raw_labels_p):
 
 if __name__ == '__main__':
     raw_labels_p = "D:/code_sources/from_github/MICCAI2020/OBELISK/preprocess/datasets/process_labels"
+    # raw_labels_p = "D:/code_sources/from_github/MICCAI2020/OBELISK/preprocess/datasets/raw/labels/"
     convert_label(raw_labels_p)
