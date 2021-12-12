@@ -36,12 +36,15 @@ def main():
     parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='tcia', required=False)
     # parser.add_argument("-fold", dest="fold", help="number of training fold", default=1, required=True)
     parser.add_argument("-model", dest="model", help="filename of pytorch pth model",
-                        default='models/obeliskhybrid_tcia_fold1.pth',
+                        default='output/obeliskhybrid_tcia.pth',  # models/obeliskhybrid_tcia_fold1.pth
+                       )
+    parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
+                        default="preprocess/datasets/process_cts/pancreas_ct11.nii.gz", 
                         required=False)
-    parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment", required=True)
-    parser.add_argument("-output", dest="output", help="nii.gz label output prediction", default=None, required=True)
+    parser.add_argument("-output", dest="output", help="nii.gz label output prediction", 
+                        default="output/preds/mylabel_ct11.nii.gz")
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default="preprocess/datasets/process_labels/label_ct1.nii.gz",
+                        default="preprocess/datasets/process_labels/label_ct11.nii.gz",
                         required=False)
 
     options = parser.parse_args()

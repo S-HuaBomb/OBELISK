@@ -4,6 +4,6 @@ raw_dicom_pancreasCT/*
 *.nii.gz
 train.slurm
 test.slurm
-__pycache__/*
+__pycache__/
 output/*
 logs/*

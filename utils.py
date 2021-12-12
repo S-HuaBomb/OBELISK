@@ -76,8 +76,10 @@ def dice_coeff(outputs, labels, max_label):
     """
     Evaluation function for Dice score of segmentation overlap
     """
+    organ_labels = {0: "background", 1: "spleen", 2: "pancreas", 3: "kidney", 
+                    4: "gallbladder", 5: "?", 6: "liver", 7: "stomach", 8: "duodenum"}
     label_nums = np.unique(labels)
-    print("labels:", label_nums)
+    # print("labels:", label_nums)
     dice = []
     for label in label_nums[1:]:
         iflat = (outputs == label).view(-1).float()
