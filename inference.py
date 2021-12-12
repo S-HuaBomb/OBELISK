@@ -28,8 +28,7 @@ def split_at(s, c, n):
 
 def main():
     """
-    python inference.py -input preprocess/datasets/process_cts/pancreas_ct1.nii.gz -output mylabel_ct1.nii.gz \
-    -groundtruth preprocess/datasets/process_labels/label_ct1.nii.gz
+    python inference.py -input preprocess/datasets/process_cts/pancreas_ct1.nii.gz -output mylabel_ct1.nii.gz -groundtruth preprocess/datasets/process_labels/label_ct1.nii.gz
     """
     # read/parse user command line input
     parser = argparse.ArgumentParser()
@@ -117,13 +116,17 @@ def main():
         img_val = img_val.cuda()
         net.cuda()
     with torch.no_grad():
+        print(f"input imageval shape: {img_val.shape}")  # torch.Size([1, 1, 144, 144, 144])
         predict = net(img_val)
+        print(f"output predict shape: {predict.shape}")  # torch.Size([1, 9, 144, 144, 144])
         if d_options['dataset'] == 'visceral':
             predict = F.interpolate(predict, size=[D_in0, H_in0, W_in0], mode='trilinear', align_corners=False)
 
     argmax = torch.argmax(predict, dim=1)
+    print(f"argmax shape: {argmax.shape}")  # torch.Size([1, 144, 144, 144])
     seg_pred = argmax.cpu().short().squeeze().numpy()
-    print("pred labels:", np.unique(seg_pred))
+    # pred segs: [0 1 2 3 4 5 6 7 8] segs shape: (144, 144, 144)
+    print("pred segs:", np.unique(seg_pred), "segs shape:", seg_pred.shape)
     seg_img = nib.Nifti1Image(seg_pred, np.eye(4))
     print('saving nifti file with labels')
     nib.save(seg_img, d_options['output'])
@@ -133,6 +136,7 @@ def main():
         dice = dice_coeff(torch.from_numpy(seg_pred), seg_val, predict.size(1))
         np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
         print('Dice validation:', dice, 'Avg.', '%0.3f' % (dice.mean()))
+        # Dice validation: [ 0.939  0.648  0.877  0.808  0.690  0.959  0.914  0.554] Avg. 0.798
 
 
 if __name__ == '__main__':

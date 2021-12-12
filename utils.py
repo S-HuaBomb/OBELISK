@@ -132,7 +132,9 @@ class MyDataset(Dataset):
             self.segs.append(torch.from_numpy(seg).unsqueeze(0).long())
 
         self.imgs = torch.cat(self.imgs, 0)
-        self.imgs.normal_()  # 0-1 归一化
+        self.imgs = (self.imgs - self.imgs.mean()) / self.imgs.std()  # mean-std scale
+        # self.imgs = (self.imgs - self.imgs.min()) / (self.imgs.max() - self.imgs.min())  # max-min scale to [0, 1]
+        # self.imgs = self.imgs / 1024.0 + 1.0  # raw data scale to [0, 3]
         self.segs = torch.cat(self.segs, 0)
         self.len_ = min(len(self.imgs), len(self.segs))
 
@@ -151,8 +153,8 @@ if __name__ == '__main__':
                            image_name="pancreas_ct?.nii.gz",
                            label_folder="./preprocess/datasets/process_labels",
                            label_name="label_ct?.nii.gz",
-                           scannumbers=[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])
-    my_dataloader = DataLoader(dataset=my_dataset, batch_size=4, num_workers=2)
+                           scannumbers=[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])  #
+    my_dataloader = DataLoader(dataset=my_dataset, batch_size=2, num_workers=2)
     print(f"len dataset: {len(my_dataset)}, len dataloader: {len(my_dataloader)}")
     imgs, segs = next(iter(my_dataloader))
     print(f"imgs size: {imgs.size()}, segs size: {segs.size()}")

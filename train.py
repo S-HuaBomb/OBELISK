@@ -15,8 +15,6 @@ import sys
 
 import argparse
 
-cuda_idx = 0
-
 from utils import init_weights, countParam, augmentAffine, my_ohem, dice_coeff, Logger, MyDataset
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
@@ -45,16 +43,24 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/obeliskhybrid_tcia")
+                        default="output/obeliskhybrid_tcia_2/")
+
+    # training args
+    parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
+                        type=int, default=4)
+    parser.add_argument("-epochs", dest="epochs", help="Train epochs",
+                        type=int, default=500)
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 
     options = parser.parse_args()
     d_options = vars(options)
-    # modelfilename = os.path.basename(d_options['model'])
-    # modelname = split_at(modelfilename, '_', 1)[0]
 
-    sys.stdout = Logger(d_options['output'] + '_log.txt')
+    print(f"output in {d_options['output']}")
+    if not os.path.exists(d_options['output']):
+        os.mkdir(d_options['output'])
+
+    sys.stdout = Logger(d_options['output'] + 'log.txt')
 
     # load train images and segmentations
     scannumbers = d_options['scannumbers']
@@ -78,27 +84,14 @@ def main():
                            label_name=file_labels,
                            scannumbers=[1, 2, 3, 4, 5])
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=4, shuffle=True)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=4)
-    # for i in scannumbers:
-    #     # /share/data_rechenknecht01_1/heinrich/TCIA_CT
-    #     filescan1 = file_cts.replace("?", str(i))
-    #     img = nib.load(os.path.join(d_options['ctfolder'], filescan1)).get_data()
-    #
-    #     fileseg1 = file_labels.replace("?", str(i))
-    #     seg = nib.load(os.path.join(d_options['labelfolder'], fileseg1)).get_data()
-    #
-    #     imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())
-    #     segs.append(torch.from_numpy(seg).unsqueeze(0).long())
-    #
-    # imgs = torch.cat(imgs, 0)
-    # segs = torch.cat(segs, 0)
-    # imgs = imgs / 1024.0 + 1.0  # scale data
-    # numEpoches = 300  # 1000
+    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=1)
+
+    numEpoches = d_options['epochs']  # 300
 
     print('data loaded')
 
-    class_weight = my_dataset.get_class_weight()
+    class_weight = train_dataset.get_class_weight()
     class_weight = class_weight / class_weight.mean()
     class_weight[0] = 0.5
     np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
@@ -106,44 +99,37 @@ def main():
 
     num_labels = int(class_weight.numel())
 
-    net = obeliskhybrid_tcia(num_labels)  # 默认 obeliskhybrid_tcia
+    net = obeliskhybrid_tcia(num_labels)  # default obeliskhybrid_tcia
     net.apply(init_weights)
     print('obelisk params', countParam(net))  # obelisk params 229217
 
     print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))  # initial offset std 0.047
-    # net.cuda(cuda_idx)
+    net.cuda()
 
-    # criterion = nn.CrossEntropyLoss()#
     my_criterion = my_ohem(.25, class_weight.cuda())  # 0.25 .cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=0.002, weight_decay=0.00001)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
 
-    run_loss = np.zeros(300)
+    run_loss = np.zeros(numEpoches)
+    best = np.zeros(2)
+    flag = 0
 
-    dice_epoch = np.zeros((len(my_dataset), num_labels - 1, 300))
-    # fold_size = imgs.size(0)  # total imgs num, 33
-    # fold_size4 = fold_size - fold_size % 4  # trop last
-    print('dataset sizes', len(my_dataset))
+    dice_epoch = np.zeros((len(train_dataset), num_labels - 1, numEpoches))
+    print('dataset sizes', len(train_dataset))
+
     # for loop over iterations and epochs
-    for epoch in range(300):
+    for epoch in range(numEpoches):
 
         net.train()
 
         run_loss[epoch] = 0.0
         t1 = 0.0
 
-        # idx_epoch = torch.randperm(fold_size)[:fold_size4].view(4, -1)  # 4 x 8 Tensor
-        # print(f"idx_epoch: {idx_epoch}")
         t0 = time.time()
 
-        # for iter in range(idx_epoch.size(1)):
-            # idx = idx_epoch[:, iter]
-            # print(f"idx from idx_epoch: {idx}")  # 4 x 1 = 4 = batch size
         for imgs, segs in train_loader:
             with torch.no_grad():
-                # imgs_cuda, y_label = augmentAffine(imgs[idx, :, :, :, :].cuda(), segs[idx, :, :, :].cuda(),
-                #                                    strength=0.075)
                 imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)  # .cuda()
                 torch.cuda.empty_cache()
 
@@ -169,15 +155,13 @@ def main():
         t1 = time.time() - t0
         net.eval()
 
-        if epoch % 3 == 0:
-            # for testNo in range(imgs.size(0)):
-            #     imgs_cuda = (imgs[testNo:testNo + 1, :, :, :, :]).cuda()
-            for val_idx, imgs, segs in enumerate(val_loader):
+        if (epoch + 1) % 5 == 0:
+            for val_idx, (imgs, segs) in enumerate(val_loader):
                 imgs_cuda = imgs.cuda()
                 t0 = time.time()
                 predict = net(imgs_cuda)
 
-                argmax = torch.max(predict, dim=1)[1]
+                argmax = torch.argmax(predict, dim=1)
                 torch.cuda.synchronize()
                 time_i = (time.time() - t0)
                 dice_all = dice_coeff(argmax.cpu(), segs, num_labels)
@@ -188,20 +172,35 @@ def main():
                 torch.cuda.empty_cache()
 
             # print some feedback information
-            print('epoch', epoch, 'time train', '%.3f' % t1, 'time inf', '%.3f' % time_i, 'loss',
-                  '%.3f' % (run_loss[epoch]), 'stddev', '%.3f' % (torch.std(net.offset1.data)))
+            all_val_dice_avgs = np.nanmean(dice_epoch[:, :, epoch], 0) * 100.0
+            mean_all_dice = np.mean(all_val_dice_avgs)
+
+            if flag == 0:
+                best[0] = mean_all_dice
+                flag = 1
+            else:
+                best[1] = mean_all_dice
+                flag = 0
+
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-            print('dice_avgs (training)', (np.nanmean(dice_epoch[:, :, epoch], 0) * 100.0))
+            print(f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch] :.5}, "
+                  f"stddev {torch.std(net.offset1.data) :.4}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.5}, "
+                  f"lr {optimizer.state_dict()['param_groups'][0]['lr'] :.8}")
+
             sys.stdout.saveCurrentResults()
             arr = {}
             arr['dice_epoch'] = dice_epoch  # .numpy()
 
-            scipy.io.savemat(d_options['output'] + '.mat', arr)
+            scipy.io.savemat(d_options['output'] + 'tcia.mat', arr)
 
-        if epoch % 6 == 0:
+        if (epoch + 1) % 10 == 0:
             net.cpu()
 
-            torch.save(net.state_dict(), d_options['output'] + '.pth')
+            torch.save(net.state_dict(), d_options['output'] + f'tcia_latest.pth')
+
+            if best[1] > best[0]:
+                torch.save(net.state_dict(), d_options['output'] + f'tcia_best.pth')
+                print(f"saved the best model at epoch {epoch}")
 
             net.cuda()
 
