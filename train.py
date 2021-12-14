@@ -28,13 +28,14 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
+    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='tcia', required=False)
     parser.add_argument("-ctFolder", dest="ctfolder", help="training CTs dataset folder",
                         default='preprocess/datasets/process_cts')
     parser.add_argument("-labelFolder", dest="labelfolder", help="training labels dataset folder",
                         default='preprocess/datasets/process_labels')
     parser.add_argument("-scannumbers", dest="scannumbers",
                         help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
-                        default="8 9 10 11 12 13 14 16 17 18 19 20 21 23 24 25 26 27 28 30 "
+                        default="8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 30 "
                                 "31 32 33 34 35 36 37 38 39 40 41 42 43",
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-filescan", dest="filescan",
@@ -43,13 +44,14 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/obeliskhybrid_tcia_2/")
+                        default="output/obeliskhybrid_tcia_3/")
 
     # training args
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=4)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
-                        type=int, default=500)
+                        type=int, default=350)
+    parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training", default=None)
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 
@@ -66,8 +68,7 @@ def main():
     scannumbers = d_options['scannumbers']
     print('scannumbers:', scannumbers)
     if d_options['filescan'].find("?") == -1:
-        print('error filescan must contain \"?\" to insert numbers')
-        exit()
+        raise ValueError('error filescan must contain \"?\" to insert numbers')
 
     file_cts = d_options['filescan']
     file_labels = d_options['fileseg']
@@ -100,24 +101,31 @@ def main():
     num_labels = int(class_weight.numel())
 
     net = obeliskhybrid_tcia(num_labels)  # default obeliskhybrid_tcia
-    net.apply(init_weights)
-    print('obelisk params', countParam(net))  # obelisk params 229217
 
+    if d_options['resume']:
+        net.load_state_dict(torch.load(d_options['resume'], map_location='cpu'))
+        print(f"Training resume from {d_options['resume']}")
+    else:
+        net.apply(init_weights)
+
+    print('obelisk params', countParam(net))  # obelisk params 229217
     print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))  # initial offset std 0.047
+
     net.cuda()
 
+    # criterion = nn.CrossEntropyLoss()#
     my_criterion = my_ohem(.25, class_weight.cuda())  # 0.25 .cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=0.002, weight_decay=0.00001)
     scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
 
     run_loss = np.zeros(numEpoches)
-    best = np.zeros(2)
-    flag = 0
+    best_acc = 0
 
-    dice_epoch = np.zeros((len(train_dataset), num_labels - 1, numEpoches))
+    dice_all_val= np.zeros((len(train_dataset), num_labels - 1))
+    # fold_size = imgs.size(0)  # total imgs num, 33
+    # fold_size4 = fold_size - fold_size % 4  # trop last
     print('dataset sizes', len(train_dataset))
-
     # for loop over iterations and epochs
     for epoch in range(numEpoches):
 
@@ -157,50 +165,48 @@ def main():
 
         if (epoch + 1) % 5 == 0:
             for val_idx, (imgs, segs) in enumerate(val_loader):
+                print(f"imgs shape: {imgs.shape}")
                 imgs_cuda = imgs.cuda()
                 t0 = time.time()
-                predict = net(imgs_cuda)
 
-                argmax = torch.argmax(predict, dim=1)
+                with torch.no_grad():
+                    predict = net(imgs_cuda)
+
+                    argmax = torch.argmax(predict, dim=1)
+
                 torch.cuda.synchronize()
                 time_i = (time.time() - t0)
-                dice_all = dice_coeff(argmax.cpu(), segs, num_labels)
-                dice_epoch[val_idx, :, epoch] = dice_all
+                dice_one_val = dice_coeff(argmax.cpu(), segs, num_labels)
+                print(f"dice_one_val of val {val_idx}: {dice_one_val}")
+                dice_all_val[val_idx] = dice_one_val
                 # del output_test
                 del predict
                 del imgs_cuda
                 torch.cuda.empty_cache()
 
             # print some feedback information
-            all_val_dice_avgs = np.nanmean(dice_epoch[:, :, epoch], 0) * 100.0
-            mean_all_dice = np.mean(all_val_dice_avgs)
+            print(f"dice_all_val: {dice_all_val}")
+            all_val_dice_avgs = dice_all_val(axis=0)
+            mean_all_dice = all_val_dice_avgs.mean()
 
-            if flag == 0:
-                best[0] = mean_all_dice
-                flag = 1
-            else:
-                best[1] = mean_all_dice
-                flag = 0
+            is_best = mean_all_dice > best_acc
+            best_acc = max(mean_all_dice, best_acc)
 
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-            print(f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch] :.5}, "
-                  f"stddev {torch.std(net.offset1.data) :.4}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.5}, "
-                  f"lr {optimizer.state_dict()['param_groups'][0]['lr'] :.8}")
+            print(f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch] :.3f}, "
+                  f"stddev {torch.std(net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
+                  f"lr {optimizer.state_dict()['param_groups'][0]['lr'] :.8f}")
 
             sys.stdout.saveCurrentResults()
-            arr = {}
-            arr['dice_epoch'] = dice_epoch  # .numpy()
-
-            scipy.io.savemat(d_options['output'] + 'tcia.mat', arr)
 
         if (epoch + 1) % 10 == 0:
             net.cpu()
 
-            torch.save(net.state_dict(), d_options['output'] + f'tcia_latest.pth')
+            torch.save(net.state_dict(), d_options['output'] + f"{d_options['dataset']}_latest.pth")
 
-            if best[1] > best[0]:
-                torch.save(net.state_dict(), d_options['output'] + f'tcia_best.pth')
-                print(f"saved the best model at epoch {epoch}")
+            if is_best:
+                torch.save(net.state_dict(), d_options['output'] + f"{d_options['dataset']}_best.pth")
+                print(f"saved the best model at epoch {epoch + 1}")
 
             net.cuda()
 
