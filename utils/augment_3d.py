@@ -60,14 +60,14 @@ def augmentAffine(img_in, seg_in, strength=0.05):
 
     elif use_what == 1:
         # 缩放
-        z = np.random.choice([0.8, 0.9, 1.1, 1.2])
+        z = np.random.choice([0.8, 0.9, 1.0, 1.1, 1.2])
         affine_matrix = torch.tensor([[z, 0, 0, 0],
                                       [0, z, 0, 0],
                                       [0, 0, z, 0]], dtype=torch.float32).to(img_in.device)
 
     elif use_what == 2:
         # 旋转
-        angle = torch.randint(-10, 10, size=[1]).item() * math.pi / 180
+        angle = np.random.choice([-10, -5, 0, 5, 10]) * math.pi / 180
         affine_matrix = torch.tensor([[math.cos(angle), math.sin(-angle), math.sin(-angle), 0],
                                       [math.sin(angle), math.cos(angle), math.sin(-angle), 0],
                                       [math.sin(angle), math.sin(angle), math.cos(angle), 0]],
