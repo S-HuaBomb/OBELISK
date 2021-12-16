@@ -14,7 +14,7 @@ import argparse
 
 cuda_idx = 0
 
-from utils import init_weights, countParam, augmentAffine, my_ohem, dice_coeff
+from utils.utils import init_weights, countParam, dice_coeff
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
 
