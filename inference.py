@@ -56,20 +56,22 @@ def main():
     img_val = torch.from_numpy(nib.load(d_options['input']).get_data()).float().unsqueeze(0).unsqueeze(0)
 
     load_successful = False
+    obelisk = torch.load(d_options['model'])
+
     if d_options['dataset'] == 'tcia':
         if modelname == 'obeliskhybrid':
             img_val = img_val / 1024.0 + 1.0  # scale data
             net = obeliskhybrid_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
         if modelname == 'allconvunet':
             # no scaling done for unet models
             net = allconvunet_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
         if modelname == 'globalfcnet':
             net = globalfcnet_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
 
     if d_options['dataset'] == 'visceral':
@@ -82,7 +84,7 @@ def main():
             _, _, D_in1, H_in1, W_in1 = img_val.size()
             full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
             net = obeliskhybrid_visceral(8, full_res)  # has 7 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
         if modelname == 'obelisk':
             img_val = img_val / 500.0
@@ -92,18 +94,18 @@ def main():
             _, _, D_in1, H_in1, W_in1 = img_val.size()
             full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
             net = obelisk_visceral(8, full_res)  # has 7 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
         if modelname == 'allconvunet':
             with torch.no_grad():
                 # subsample by factor of 2 (higher resolution in our original data)
                 img_val = F.avg_pool3d(img_val, 3, padding=1, stride=2)
             net = allconvunet_visceral()  # has 7 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
         if modelname == 'globalfcnet':
             net = globalfcnet_visceral()  # has 7 anatomical foreground labels
-            net.load_state_dict(torch.load(d_options['model']))
+            net.load_state_dict(obelisk["checkpoint"])
             load_successful = True
 
     if load_successful:
