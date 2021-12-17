@@ -52,8 +52,8 @@ def dice_coeff(outputs, labels, max_label):
     # print("labels:", label_nums)
     dice = []
     for label in label_nums[1:]:
-        iflat = (outputs == label).view(-1).float()
-        tflat = (labels == label).view(-1).float()
+        iflat = (outputs == label).reshape(-1).float()
+        tflat = (labels == label).reshape(-1).float()
         intersection = (iflat * tflat).sum()
         dice.append((2. * intersection) / (iflat.sum() + tflat.sum()))
     return np.asarray(dice)

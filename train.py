@@ -18,7 +18,7 @@ import argparse
 from utils.utils import init_weights, countParam, dice_coeff, Logger, get_cosine_schedule_with_warmup
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
-from utils.losses import my_ohem
+from utils.losses import OHEMLoss, DiceLoss
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
 
@@ -105,7 +105,8 @@ def main():
           class_weight.data.cpu().numpy())  # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
 
     # criterion = nn.CrossEntropyLoss()#
-    my_criterion = my_ohem(0.25, class_weight.cuda())  # 0.25 .cuda()
+    dice_criterion = DiceLoss()  # Dice Loss
+    my_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
 
     num_labels = int(class_weight.numel())
     print(f"num of labels: {num_labels}")
@@ -149,9 +150,13 @@ def main():
         t0 = time.time()
 
         for imgs, segs in train_loader:
-            with torch.no_grad():
-                imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)  # .cuda()
-                torch.cuda.empty_cache()
+            if np.random.choice([0, 1]):
+                # 50% to apply data augment
+                with torch.no_grad():
+                    imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)  # .cuda()
+                    torch.cuda.empty_cache()
+            else:
+                imgs_cuda, y_label = imgs.cuda(), segs.cuda()
 
             optimizer.zero_grad()
 

@@ -56,11 +56,11 @@ def main():
     img_val = torch.from_numpy(nib.load(d_options['input']).get_data()).float().unsqueeze(0).unsqueeze(0)
 
     load_successful = False
-    obelisk = torch.load(d_options['model'])
+    obelisk = torch.load(d_options['model'], map_location=torch.device('cpu'))
 
     if d_options['dataset'] == 'tcia':
         if modelname == 'obeliskhybrid':
-            img_val = img_val / 1024.0 + 1.0  # scale data
+            img_val = (img_val - img_val.mean()) / img_val.std()  # mean-std scale
             net = obeliskhybrid_tcia(9)  # has 8 anatomical foreground labels
             net.load_state_dict(obelisk["checkpoint"])
             load_successful = True

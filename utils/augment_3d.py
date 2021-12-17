@@ -73,7 +73,7 @@ def augmentAffine(img_in, seg_in, strength=0.05):
                                       [math.sin(angle), math.sin(angle), math.cos(angle), 0]],
                                      dtype=torch.float32).to(img_in.device)
 
-    meshgrid = F.affine_grid(affine_matrix.expand(B, 3, 4), torch.Size((B, 1, D, H, W)))
+    meshgrid = F.affine_grid(affine_matrix.expand(B, 3, 4), size=[B, 1, D, H, W])
 
     img_out = F.grid_sample(img_in, meshgrid, padding_mode='border')
     seg_out = F.grid_sample(seg_in.float().unsqueeze(1), meshgrid, mode='nearest').long().squeeze(1)
