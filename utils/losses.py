@@ -35,32 +35,23 @@ class OHEMLoss(torch.nn.NLLLoss):
         return torch.nn.functional.nll_loss(x_hn, y_hn, weight=self.weights)
 
 
-def dice_loss(y_true, y_pred):
-    ndims = len(list(y_pred.size())) - 2
-    vol_axes = list(range(2, ndims + 2))
-    top = 2 * (y_true * y_pred).sum(dim=vol_axes)
-    bottom = torch.clamp((y_true + y_pred).sum(dim=vol_axes), min=1e-5)
-    dice = torch.mean(top / bottom)
-    return -dice
-
-
-class DiceLoss(nn.Module):
-    def __init__(self, *args, **kwargs):
-        super(DiceLoss, self).__init__()
-
-    def forward(self, input, target):
+class DiceLoss(Function):
+    @staticmethod
+    def forward(ctx, input, target, save=True):
+        if save:
+            ctx.save_for_backward(input, target)
         eps = 0.000001
         result_ = input.argmax(1)
         result_ = torch.squeeze(result_)
         if input.is_cuda:
             result = torch.cuda.FloatTensor(result_.size())
-            self.target_ = torch.cuda.FloatTensor(target.size())
+            ctx.target_ = torch.cuda.FloatTensor(target.size())
         else:
             result = torch.FloatTensor(result_.size())
-            self.target_ = torch.FloatTensor(target.size())
+            ctx.target_ = torch.FloatTensor(target.size())
         result.copy_(result_)
-        self.target_.copy_(target)
-        target = self.target_
+        ctx.target_.copy_(target)
+        target = ctx.target_
         #       print(input)
         intersect = torch.sum(result * target)
         # binary values so sum the same as sum of squares
@@ -74,50 +65,39 @@ class DiceLoss(nn.Module):
         # print('union: {:.3f}\t intersect: {:.6f}\t target_sum: {:.0f} IoU: result_sum: {:.0f} IoU {:.7f}'.format(
         #     union, intersect, target_sum, result_sum, 2*IoU))
         out = torch.FloatTensor(1).fill_(2 * IoU)
-        self.intersect, self.union = intersect, union
+        ctx.intersect, ctx.union = intersect, union
         return 1 - out
 
-    def backward(self, grad_output):
-        input, _ = self.saved_tensors
-        intersect, union = self.intersect, self.union
-        target = self.target_
+    @staticmethod
+    def backward(ctx, grad_output):
+        input, _ = ctx.saved_tensors
+        intersect, union = ctx.intersect, ctx.union
+        target = ctx.target_
         gt = torch.div(target, union)
         IoU2 = intersect / (union * union)
         pred = torch.mul(input[:, 1], IoU2)
         dDice = torch.add(torch.mul(gt, 2), torch.mul(pred, -4))
-        grad_out = torch.cat((torch.mul(dDice, -grad_output[0]),
-                                torch.mul(dDice, grad_output[0])), 0)
-        return grad_out
+        grad_out = torch.cat((torch.mul(dDice, -grad_output[0]).unsqueeze(0),
+                              torch.mul(dDice, grad_output[0]).unsqueeze(0)), 0)
+        return grad_out, None
 
 
-def dice_loss_(input, target):
-    eps = 0.000001
-    _, result_ = input.max(1)
-    result_ = torch.squeeze(result_)
-    if input.is_cuda:
-        result = torch.cuda.FloatTensor(result_.size())
-        target_ = torch.cuda.FloatTensor(target.size())
-    else:
-        result = torch.FloatTensor(result_.size())
-        target_ = torch.FloatTensor(target.size())
-    result.copy_(result_)
-    target_.copy_(target)
-    target = target_
-    #       print(input)
-    intersect = torch.sum(result * target)
-    # binary values so sum the same as sum of squares
-    result_sum = torch.sum(result)
-    target_sum = torch.sum(target)
-    union = result_sum + target_sum + (2 * eps)
+def multi_class_dice_loss(soft_pred, target, num_labels, weights=None):
+    loss = 0
+    target = target.float()
+    smooth = 1e-6
+    for i in range(num_labels):
+        score = soft_pred[:, i]
+        target_ = target == i
+        intersect = torch.sum(score * target_)
+        y_sum = torch.sum(target_ * target_)
+        z_sum = torch.sum(score * score)
+        loss += ((2 * intersect + smooth) / (z_sum + y_sum + smooth))
+        if weights is not None:
+            loss *= weights[i]
+    loss = 1 - (loss / num_labels)
+    return loss
 
-    # the target volume can be empty - so we still want to
-    # end up with a score of 1 if the result is 0/0
-    IoU = intersect / union
-    # print('union: {:.3f}\t intersect: {:.6f}\t target_sum: {:.0f} IoU: result_sum: {:.0f} IoU {:.7f}'.format(
-    #     union, intersect, target_sum, result_sum, 2*IoU))
-    out = torch.FloatTensor(1).fill_(2 * IoU)
-    intersect, union = intersect, union
-    return 1 - out
 
 if __name__ == "__main__":
     # pred_seg = torch.randn(size=(2, 9, 10, 10, 10), dtype=torch.float32, requires_grad=True)  # 2 个 batch，9 个分类
@@ -159,16 +139,27 @@ if __name__ == "__main__":
     # loss_o.backward()
     # print(f"OHEM pred_very_good: {loss_o.item()}, grad: {pred_very_good.grad}")  # OHEM pred_very_good: 0.0
     # loss_o = OHEM_loss(F.log_softmax(pred_very_poor, dim=1), label)
-    # print(f"OHEM pred_very_poor: {loss_o.item()}")  # OHEM pred_very_poor: 1000.0
+    # print(f"OHEM pred_very_poor: {loss_o.item()}")  # OHEM pred_very_poor: 1.0
 
-    Dice_loss = DiceLoss()
-    loss_d = Dice_loss(F.softmax(pred_very_good, dim=1), label)
-    loss_d.requires_grad_(True)
-    loss_d.backward()
-    print(f"Dice pred_very_good: {loss_d.item()}, "
+    # Dice_loss = DiceLoss()
+    # loss_d = DiceLoss.apply(F.softmax(pred_very_good, dim=1), label)
+    # loss_d.requires_grad_(True)
+    # loss_d.backward()
+    # print(f"Dice pred_very_good: {loss_d.item()}, "
+    #       f"is_leaf: {pred_very_good.is_leaf}, "
+    #       f"grad: {pred_very_good.grad}")  # Dice pred_very_good: 5.960464477539063e-08
+    # loss_d = DiceLoss.apply(F.softmax(pred_very_poor, dim=1), label)
+    # loss_d.requires_grad_(True)
+    # loss_d.backward()
+    # print(f"Dice pred_very_poor: {loss_d.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
+
+    loss_md = multi_class_dice_loss(F.softmax(pred_very_good, dim=1), label, 2)
+    loss_md.requires_grad_(True)
+    loss_md.backward()
+    print(f"Dice pred_very_good: {loss_md.item()}, "
           f"is_leaf: {pred_very_good.is_leaf}, "
-          f"grad: {loss_d.grad_fn}")  # Dice pred_very_good: 5.960464477539063e-08
-    loss_d = Dice_loss(F.softmax(pred_very_poor, dim=1), label)
-    loss_d.requires_grad_(True)
-    loss_d.backward()
-    print(f"Dice pred_very_poor: {loss_d.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
+          f"grad: {pred_very_good.grad}")  # Dice pred_very_good: 0.0
+    loss_md = multi_class_dice_loss(F.softmax(pred_very_poor, dim=1), label, 2)
+    loss_md.requires_grad_(True)
+    loss_md.backward()
+    print(f"Dice pred_very_poor: {loss_md.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0

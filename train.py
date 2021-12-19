@@ -12,13 +12,14 @@ import sys
 import nibabel as nib
 import scipy.io
 import sys
+import visdom
 
 import argparse
 
 from utils.utils import init_weights, countParam, dice_coeff, Logger, get_cosine_schedule_with_warmup
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
-from utils.losses import OHEMLoss, DiceLoss
+from utils.losses import OHEMLoss, DiceLoss, multi_class_dice_loss
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
 
@@ -47,23 +48,30 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/obeliskhybrid_tcia_3/")
+                        default="output/obeliskhybrid_tcia_dice/")
 
     # training args
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=2)
     parser.add_argument("-learning_rate", dest="lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=0.001)
+    parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
+                        type=float, default=1.0)
+    parser.add_argument("-ohem_weight", dest="ohem_weight", help="OHEM loss weight",
+                        type=float, default=1.0)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
                         type=int, default=350)
     parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training", default=None)
     parser.add_argument("-interval", dest="interval", help="validation and saving interval", default=5)
+    parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
+                        type=bool, default=False)
 
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 
     options = parser.parse_args()
     d_options = vars(options)
+    is_visdom = d_options["visdom"]
 
     print(f"output in {d_options['output']}")
     if not os.path.exists(d_options['output']):
@@ -105,8 +113,7 @@ def main():
           class_weight.data.cpu().numpy())  # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
 
     # criterion = nn.CrossEntropyLoss()#
-    dice_criterion = DiceLoss()  # Dice Loss
-    my_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
+    ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
 
     num_labels = int(class_weight.numel())
     print(f"num of labels: {num_labels}")
@@ -124,6 +131,7 @@ def main():
         obelisk = torch.load(d_options['resume'])
         net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
+        scheduler.load_state_dict(obelisk["scheduler"])
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         print(f"Training resume from {d_options['resume']}")
@@ -132,13 +140,30 @@ def main():
         star_epoch = 0
         net.apply(init_weights)
 
+    dice_weight = d_options["dice_weight"]
+    ohem_weight = d_options["ohem_weight"]
+
     print('obelisk params', countParam(net))  # obelisk params 229217
     print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))  # initial offset std 0.047
 
-    run_loss = np.zeros(end_epoch)
+    run_loss = np.zeros([end_epoch, 3])
 
     dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
     print('Training set sizes', len(train_dataset), "Validation set sizes", len(val_dataset))
+
+    if is_visdom:
+        vis = visdom.Visdom()  # 用 visdom 实时可视化loss曲线
+        print("visdom 实时可视化已开启, 启动服务: python -m visdom.server")
+        loss_opts = {'xlabel': 'epochs',
+                     'ylabel': 'loss',
+                     'title': 'Loss 曲线',
+                     'legend': ['total loss', 'dice loss', 'ohem loss']}
+        acc_opts = {'xlabel': 'epochs',
+                    'ylabel': 'acc',
+                    'title': '精度曲线',
+                    'legend': ['1 spleen', '2 pancreas', '3 kidney', '4 gallbladder', '5 ?', '6 liver', '7 stomach', '8 duodenum']}
+        lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': '学习率曲线'}
+
     # for loop over iterations and epochs
     for epoch in range(star_epoch, end_epoch):
 
@@ -153,7 +178,7 @@ def main():
             if np.random.choice([0, 1]):
                 # 50% to apply data augment
                 with torch.no_grad():
-                    imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)  # .cuda()
+                    imgs_cuda, y_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)
                     torch.cuda.empty_cache()
             else:
                 imgs_cuda, y_label = imgs.cuda(), segs.cuda()
@@ -163,12 +188,18 @@ def main():
             # forward path and loss
             predict = net(imgs_cuda)
 
-            loss = my_criterion(F.log_softmax(predict, dim=1), y_label)
-            loss.backward()
+            ohem_loss = ohem_criterion(F.log_softmax(predict, dim=1), y_label)
+            dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels)  # class_weight
+            total_loss = dice_weight * dice_loss + ohem_weight * ohem_loss
+            # loss = DiceLoss.apply(F.softmax(predict, dim=1), y_label)
+            total_loss.backward()
 
-            run_loss[epoch] += loss.item()
+            run_loss[epoch, 0] += total_loss.item()
+            run_loss[epoch, 1] += dice_weight * dice_loss.item()
+            run_loss[epoch, 2] += ohem_weight * ohem_loss.item()
+
             optimizer.step()
-            del loss
+            del total_loss
             del predict
             torch.cuda.empty_cache()
             del imgs_cuda
@@ -200,15 +231,24 @@ def main():
             # print some feedback information
             all_val_dice_avgs = dice_all_val.mean(axis=0)
             mean_all_dice = all_val_dice_avgs.mean()
+            latest_lr = optimizer.state_dict()['param_groups'][0]['lr']
 
             is_best = mean_all_dice > best_acc
             best_acc = max(mean_all_dice, best_acc)
 
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
             print(
-                f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch] :.3f}, "
+                f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch, 0] :.3f}, "
                 f"stddev {torch.std(net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
-                f"best_acc {best_acc :.3f}, lr {optimizer.state_dict()['param_groups'][0]['lr'] :.8f}")
+                f"best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
+
+            if is_visdom:
+                # loss line
+                vis.line(Y=[run_loss[epoch]], X=[epoch], win='loss-', update='append', opts=loss_opts)
+                # acc line
+                vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
+                # lr decay line
+                vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
 
             sys.stdout.saveCurrentResults()
 
@@ -217,6 +257,7 @@ def main():
             state_dict = {
                 "checkpoint": net.state_dict(),
                 "optimizer": optimizer.state_dict(),
+                "scheduler": scheduler.state_dict(),
                 "best_acc": best_acc,
                 "epoch": epoch,
             }

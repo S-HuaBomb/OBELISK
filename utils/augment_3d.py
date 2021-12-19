@@ -51,27 +51,27 @@ def augmentAffine(img_in, seg_in, strength=0.05):
     :input: img_in batch (torch.cuda.FloatTensor), seg_in batch (torch.cuda.LongTensor)
     :return: augmented BxCxTxHxW image batch (torch.cuda.FloatTensor), augmented BxTxHxW seg batch (torch.cuda.LongTensor)
     """
-    use_what = np.random.choice([0, 1, 2])
+    use_what = np.random.choice([0])  # 1, 2,
     B, C, D, H, W = img_in.size()
 
     if use_what == 0:
         # 仿射变形
         affine_matrix = (torch.eye(3, 4).unsqueeze(0) + torch.randn(B, 3, 4) * strength).to(img_in.device)
 
-    elif use_what == 1:
-        # 缩放
-        z = np.random.choice([0.8, 0.9, 1.1, 1.2])
-        affine_matrix = torch.tensor([[z, 0, 0, 0],
-                                      [0, z, 0, 0],
-                                      [0, 0, z, 0]], dtype=torch.float32).to(img_in.device)
-
-    elif use_what == 2:
-        # 旋转
-        angle = np.random.choice([-10, -5, 5, 10]) * math.pi / 180
-        affine_matrix = torch.tensor([[math.cos(angle), math.sin(-angle), math.sin(-angle), 0],
-                                      [math.sin(angle), math.cos(angle), math.sin(-angle), 0],
-                                      [math.sin(angle), math.sin(angle), math.cos(angle), 0]],
-                                     dtype=torch.float32).to(img_in.device)
+    # elif use_what == 1:
+    #     # 缩放
+    #     z = np.random.choice([0.8, 0.9, 1.1, 1.2])
+    #     affine_matrix = torch.tensor([[z, 0, 0, 0],
+    #                                   [0, z, 0, 0],
+    #                                   [0, 0, z, 0]], dtype=torch.float32).to(img_in.device)
+    #
+    # elif use_what == 2:
+    #     # 旋转
+    #     angle = np.random.choice([-10, -5, 5, 10]) * math.pi / 180
+    #     affine_matrix = torch.tensor([[math.cos(angle), math.sin(-angle), math.sin(-angle), 0],
+    #                                   [math.sin(angle), math.cos(angle), math.sin(-angle), 0],
+    #                                   [math.sin(angle), math.sin(angle), math.cos(angle), 0]],
+    #                                  dtype=torch.float32).to(img_in.device)
 
     meshgrid = F.affine_grid(affine_matrix.expand(B, 3, 4), size=[B, 1, D, H, W])
 
