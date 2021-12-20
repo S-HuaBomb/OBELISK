@@ -1,4 +1,5 @@
 preprocess/datasets/*
+preprocess/MICCAI2021/*
 .idea
 raw_dicom_pancreasCT/*
 *.nii.gz

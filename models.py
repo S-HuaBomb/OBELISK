@@ -9,24 +9,23 @@ import numpy as np
 # model contains two obelisk layers combined with traditional CNNs
 # the layers have 512 and 128 trainable offsets and 230k trainable weights in total
 class obeliskhybrid_tcia(nn.Module):
-    def __init__(self, num_labels):
+    def __init__(self, num_labels, full_res):
         super(obeliskhybrid_tcia, self).__init__()
         self.num_labels = num_labels
-        D_in5 = 18
-        H_in5 = 18
-        W_in5 = 18
-        D_in4 = 36
-        H_in4 = 36
-        W_in4 = 36
-        D_in3 = 72
-        H_in3 = 72
-        W_in3 = 72
-        D_in2 = 144
-        H_in2 = 144
-        W_in2 = 144
-        D_grid = D_in3
-        H_grid = H_in3
-        W_grid = W_in3
+        D_in2 = full_res[0]  # 192
+        H_in2 = full_res[1]  # 160
+        W_in2 = full_res[2]  # 192
+        D_in3 = D_in2 // 2  # 96
+        H_in3 = H_in2 // 2  # 80
+        W_in3 = W_in2 // 2  # 96
+
+        D_in4 = D_in3 // 2  # 48
+        H_in4 = H_in3 // 2  # 40
+        W_in4 = W_in3 // 2  # 48
+
+        D_in5 = D_in4 // 2  # 24
+        H_in5 = H_in4 // 2  # 20
+        W_in5 = W_in4 // 2  # 24
 
         D_grid1 = D_in3
         H_grid1 = H_in3

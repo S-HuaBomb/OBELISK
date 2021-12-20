@@ -11,8 +11,7 @@ class MyDataset(Dataset):
                  image_name,
                  label_folder,
                  label_name,
-                 scannumbers,
-                 dataset='tcia'):
+                 scannumbers):
         super(MyDataset, self).__init__()
         if image_name.find("?") == -1 or label_name.find("?") == -1:
             raise ValueError('error! filename must contain \"?\" to insert your chosen numbers')
@@ -23,10 +22,10 @@ class MyDataset(Dataset):
         self.imgs, self.segs = [], []
         for i in scannumbers:
             # /share/data_rechenknecht01_1/heinrich/TCIA_CT
-            filescan1 = image_name.replace("?", str(i) if dataset == 'tcia' else str(i).zfill(4))
+            filescan1 = image_name.replace("?", str(i))
             img = nib.load(os.path.join(image_folder, filescan1)).get_fdata()
 
-            fileseg1 = label_name.replace("?", str(i) if dataset == 'tcia' else str(i).zfill(4))
+            fileseg1 = label_name.replace("?", str(i))
             seg = nib.load(os.path.join(label_folder, fileseg1)).get_fdata()
 
             self.imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())

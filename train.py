@@ -121,6 +121,7 @@ def main():
     num_labels = int(class_weight.numel())
     print(f"num of labels: {num_labels}")
 
+    full_res = torch.tensor([192, 160, 192]).long()  # full resolution
     net = obeliskhybrid_tcia(num_labels)  # default obeliskhybrid_tcia
     net.cuda()
 
