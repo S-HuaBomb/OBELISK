@@ -194,7 +194,7 @@ def main():
             predict = net(imgs_cuda)
 
             ohem_loss = ohem_criterion(F.log_softmax(predict, dim=1), y_label)
-            dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels)  # class_weight
+            dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels, class_weight)
             total_loss = dice_weight * dice_loss + ohem_weight * ohem_loss
             # loss = DiceLoss.apply(F.softmax(predict, dim=1), y_label)
             total_loss.backward()
@@ -211,7 +211,7 @@ def main():
             del y_label
             torch.cuda.empty_cache()
 
-        scheduler.step()  # epoch wise lr decay
+        scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
 
         # evaluation on training images
         t1 = time.time() - t0
