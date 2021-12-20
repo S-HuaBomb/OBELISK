@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
 import time
@@ -55,6 +56,8 @@ def main():
                         type=int, default=2)
     parser.add_argument("-learning_rate", dest="lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=0.001)
+    parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
+                        type=int, default=5)
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
                         type=float, default=1.0)
     parser.add_argument("-ohem_weight", dest="ohem_weight", help="OHEM loss weight",
@@ -62,7 +65,7 @@ def main():
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
                         type=int, default=350)
     parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training", default=None)
-    parser.add_argument("-interval", dest="interval", help="validation and saving interval", default=5)
+    parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=5)
     parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
                         type=bool, default=False)
 
@@ -123,9 +126,10 @@ def main():
 
     optimizer = optim.Adam(net.parameters(), lr=d_options['lr'], weight_decay=0.00001)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
-    scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-                                                warmup_steps=5,
-                                                total_steps=end_epoch,)
+    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=2)
+    # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+    #                                             warmup_steps=d_options["warmup_steps"],
+    #                                             total_steps=end_epoch,)
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
@@ -163,6 +167,7 @@ def main():
                     'title': '精度曲线',
                     'legend': ['1 spleen', '2 pancreas', '3 kidney', '4 gallbladder', '5 ?', '6 liver', '7 stomach', '8 duodenum']}
         lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': '学习率曲线'}
+        best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': '最佳验证精度'}
 
     # for loop over iterations and epochs
     for epoch in range(star_epoch, end_epoch):
@@ -267,6 +272,7 @@ def main():
             if is_best:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 print(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
+                vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
 
             net.cuda()
 

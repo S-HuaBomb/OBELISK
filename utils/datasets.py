@@ -11,7 +11,8 @@ class MyDataset(Dataset):
                  image_name,
                  label_folder,
                  label_name,
-                 scannumbers):
+                 scannumbers,
+                 dataset='tcia'):
         super(MyDataset, self).__init__()
         if image_name.find("?") == -1 or label_name.find("?") == -1:
             raise ValueError('error! filename must contain \"?\" to insert your chosen numbers')
@@ -22,11 +23,11 @@ class MyDataset(Dataset):
         self.imgs, self.segs = [], []
         for i in scannumbers:
             # /share/data_rechenknecht01_1/heinrich/TCIA_CT
-            filescan1 = image_name.replace("?", str(i))
-            img = nib.load(os.path.join(image_folder, filescan1)).get_data()
+            filescan1 = image_name.replace("?", str(i) if dataset == 'tcia' else str(i).zfill(4))
+            img = nib.load(os.path.join(image_folder, filescan1)).get_fdata()
 
-            fileseg1 = label_name.replace("?", str(i))
-            seg = nib.load(os.path.join(label_folder, fileseg1)).get_data()
+            fileseg1 = label_name.replace("?", str(i) if dataset == 'tcia' else str(i).zfill(4))
+            seg = nib.load(os.path.join(label_folder, fileseg1)).get_fdata()
 
             self.imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())
             self.segs.append(torch.from_numpy(seg).unsqueeze(0).long())
@@ -49,17 +50,24 @@ class MyDataset(Dataset):
 
 
 if __name__ == '__main__':
-    my_dataset = MyDataset(image_folder="../preprocess/datasets/process_cts/",
-                           image_name="pancreas_ct?.nii.gz",
-                           label_folder="../preprocess/datasets/process_labels",
-                           label_name="label_ct?.nii.gz",
-                           scannumbers=[11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21])  #
+    my_dataset = MyDataset(
+        dataset="bcv",
+        image_folder=r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\auxiliary\L2R_Task1_CT\CTs",
+        image_name="img?_bcv_CT.nii.gz",
+        label_folder=r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\auxiliary\L2R_Task1_CT\labels",
+        label_name="seg?_bcv_CT.nii.gz",
+        scannumbers=[1, 2, 3, 4, 5, 40])  #
     my_dataloader = DataLoader(dataset=my_dataset, batch_size=2, num_workers=2)
     print(f"len dataset: {len(my_dataset)}, len dataloader: {len(my_dataloader)}")
     imgs, segs = next(iter(my_dataloader))
     print(f"imgs size: {imgs.size()}, segs size: {segs.size()}")
     print(f"min, max in imgs: {torch.min(imgs), torch.max(imgs)}")
     print(f"mean, std in imgs: {imgs.mean(), imgs.std()}")
+
+    class_weight = my_dataset.get_class_weight()
+    class_weight = class_weight / class_weight.mean()
+    class_weight[0] = 0.5
+    print(f"class weights: {class_weight}")
 
     """
     len dataset: 11, len dataloader: 6
