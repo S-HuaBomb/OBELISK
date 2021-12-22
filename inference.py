@@ -49,70 +49,24 @@ def main():
 
     options = parser.parse_args()
     d_options = vars(options)
-    modelfilename = os.path.basename(d_options['model'])
-    modelname = split_at(modelfilename, '_', 1)[0]
-    print('input CT image', d_options['input'], '\n   and model name', modelname, 'for dataset', d_options['dataset'])
 
     img_val = torch.from_numpy(nib.load(d_options['input']).get_data()).float().unsqueeze(0).unsqueeze(0)
 
-    load_successful = False
     obelisk = torch.load(d_options['model'], map_location=torch.device('cpu'))
 
     if d_options['dataset'] == 'tcia':
-        if modelname == 'obeliskhybrid':
-            img_val = (img_val - img_val.mean()) / img_val.std()  # mean-std scale
-            net = obeliskhybrid_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
-        if modelname == 'allconvunet':
-            # no scaling done for unet models
-            net = allconvunet_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
-        if modelname == 'globalfcnet':
-            net = globalfcnet_tcia(9)  # has 8 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
+        class_num = 9
+        full_res = torch.tensor([144, 144, 144]).long()
+    elif d_options['dataset'] == 'bcv':
+        class_num = 5
+        full_res = torch.tensor([192, 160, 192]).long()
 
-    if d_options['dataset'] == 'visceral':
-        _, _, D_in0, H_in0, W_in0 = img_val.size()
-        if modelname == 'obeliskhybrid':
-            img_val = img_val / 1000.0
-            with torch.no_grad():
-                # subsample by factor of 2 (higher resolution in our original data)
-                img_val = F.avg_pool3d(img_val, 3, padding=1, stride=2)
-            _, _, D_in1, H_in1, W_in1 = img_val.size()
-            full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
-            net = obeliskhybrid_visceral(8, full_res)  # has 7 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
-        if modelname == 'obelisk':
-            img_val = img_val / 500.0
-            img_val = F.avg_pool3d(img_val, 5, stride=1, padding=2)
-            img_val = F.avg_pool3d(img_val, 5, stride=1, padding=2)
-            img_val = F.avg_pool3d(img_val, 3, stride=1, padding=1)
-            _, _, D_in1, H_in1, W_in1 = img_val.size()
-            full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()
-            net = obelisk_visceral(8, full_res)  # has 7 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
-        if modelname == 'allconvunet':
-            with torch.no_grad():
-                # subsample by factor of 2 (higher resolution in our original data)
-                img_val = F.avg_pool3d(img_val, 3, padding=1, stride=2)
-            net = allconvunet_visceral()  # has 7 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
-        if modelname == 'globalfcnet':
-            net = globalfcnet_visceral()  # has 7 anatomical foreground labels
-            net.load_state_dict(obelisk["checkpoint"])
-            load_successful = True
+    img_val = (img_val - img_val.mean()) / img_val.std()  # mean-std scale
 
-    if load_successful:
-        print('read in model with', countParam(net), 'parameters')
-    else:
-        print('model', modelname, 'for dataset', d_options['dataset'], 'not yet supported. exit()')
-        exit()
+    # load pretrained OBELISK model
+    net = obeliskhybrid_tcia(class_num, full_res)  # has 8 anatomical foreground labels
+    net.load_state_dict(obelisk["checkpoint"])
+    print('Successful loaded model with', countParam(net), 'parameters')
 
     net.eval()
 

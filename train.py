@@ -17,10 +17,10 @@ import visdom
 
 import argparse
 
-from utils.utils import init_weights, countParam, dice_coeff, Logger, get_cosine_schedule_with_warmup
+from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
-from utils.losses import OHEMLoss, DiceLoss, multi_class_dice_loss
+from utils.losses import OHEMLoss, multi_class_dice_loss
 from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
 
 
@@ -49,7 +49,7 @@ def main():
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/obeliskhybrid_tcia_dice/")
+                        default="output/obeliskhybrid/")
 
     # training args
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
@@ -72,19 +72,20 @@ def main():
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
 
-    options = parser.parse_args()
-    d_options = vars(options)
+    args = parser.parse_args()
+    d_options = vars(args)
     is_visdom = d_options["visdom"]
 
-    print(f"output in {d_options['output']}")
     if not os.path.exists(d_options['output']):
         os.mkdir(d_options['output'])
 
-    sys.stdout = Logger(d_options['output'] + 'log.txt')
+    logger = get_logger(d_options['output'])
+    # sys.stdout = Logger(d_options['output'] + 'log.txt')
+    logger.info(f"output to {d_options['output']}")
 
     # load train images and segmentations
     scannumbers = d_options['scannumbers']
-    print('scannumbers:', scannumbers)
+    logger.info(f'scannumbers: {scannumbers}')
     if d_options['filescan'].find("?") == -1:
         raise ValueError('error filescan must contain \"?\" to insert numbers')
 
@@ -112,17 +113,20 @@ def main():
     class_weight = class_weight / class_weight.mean()
     class_weight[0] = 0.5
     np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-    print('inv sqrt class_weight',
-          class_weight.data.cpu().numpy())  # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
+    logger.info(f'inv sqrt class_weight: {class_weight.data.cpu().numpy()}')
+    # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
 
     # criterion = nn.CrossEntropyLoss()#
     ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
 
     num_labels = int(class_weight.numel())
-    print(f"num of labels: {num_labels}")
+    logger.info(f"num of labels: {num_labels}")
 
-    full_res = torch.tensor([192, 160, 192]).long()  # full resolution
-    net = obeliskhybrid_tcia(num_labels)  # default obeliskhybrid_tcia
+    if d_options['dataset'] == 'tcia':
+        full_res = torch.tensor([144, 144, 144]).long()
+    elif d_options['dataset'] == 'bcv':
+        full_res = torch.tensor([192, 160, 192]).long()  # full resolution
+    net = obeliskhybrid_tcia(num_labels, full_res)  # default obeliskhybrid_tcia
     net.cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=d_options['lr'], weight_decay=0.00001)
@@ -139,7 +143,7 @@ def main():
         scheduler.load_state_dict(obelisk["scheduler"])
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
-        print(f"Training resume from {d_options['resume']}")
+        logger.info(f"Training resume from {d_options['resume']}")
     else:
         best_acc = 0
         star_epoch = 0
@@ -148,17 +152,17 @@ def main():
     dice_weight = d_options["dice_weight"]
     ohem_weight = d_options["ohem_weight"]
 
-    print('obelisk params', countParam(net))  # obelisk params 229217
-    print('initial offset std', '%.3f' % (torch.std(net.offset1.data).item()))  # initial offset std 0.047
+    logger.info(f'obelisk params: {countParam(net)}')  # obelisk params 229217
+    logger.info(f'initial offset std: {torch.std(net.offset1.data).item() :.3f}')  # initial offset std 0.047
 
     run_loss = np.zeros([end_epoch, 3])
 
     dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
-    print('Training set sizes', len(train_dataset), "Validation set sizes", len(val_dataset))
+    logger.info(f'Training set sizes: {len(train_dataset)}, Validation set sizes: {len(val_dataset)}')
 
     if is_visdom:
         vis = visdom.Visdom()  # 用 visdom 实时可视化loss曲线
-        print("visdom 实时可视化已开启, 启动服务: python -m visdom.server")
+        logger.info("visdom 实时可视化已开启, 启动服务: python -m visdom.server")
         loss_opts = {'xlabel': 'epochs',
                      'ylabel': 'loss',
                      'title': 'Loss 曲线',
@@ -166,7 +170,9 @@ def main():
         acc_opts = {'xlabel': 'epochs',
                     'ylabel': 'acc',
                     'title': '精度曲线',
-                    'legend': ['1 spleen', '2 pancreas', '3 kidney', '4 gallbladder', '5 ?', '6 liver', '7 stomach', '8 duodenum']}
+                    'legend': ['1 spleen', '2 pancreas', '3 kidney', '4 gallbladder', '5 ?', '6 liver', '7 stomach',
+                               '8 duodenum'] if d_options['dataset'] == 'tcia'
+                    else ['1 liver', '2 spleen', '3 right kidney', '4 left kidney']}
         lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': '学习率曲线'}
         best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': '最佳验证精度'}
 
@@ -234,7 +240,7 @@ def main():
                 del imgs_cuda
                 torch.cuda.empty_cache()
 
-            # print some feedback information
+            # logger some feedback information
             all_val_dice_avgs = dice_all_val.mean(axis=0)
             mean_all_dice = all_val_dice_avgs.mean()
             latest_lr = optimizer.state_dict()['param_groups'][0]['lr']
@@ -243,7 +249,7 @@ def main():
             best_acc = max(mean_all_dice, best_acc)
 
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-            print(
+            logger.info(
                 f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch, 0] :.3f}, "
                 f"stddev {torch.std(net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
                 f"best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
@@ -255,8 +261,6 @@ def main():
                 vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
                 # lr decay line
                 vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
-
-            sys.stdout.saveCurrentResults()
 
             net.cpu()
 
@@ -272,7 +276,7 @@ def main():
 
             if is_best:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
-                print(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
+                logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
                 vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
 
             net.cuda()
