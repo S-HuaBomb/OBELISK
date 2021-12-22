@@ -45,9 +45,9 @@ def main():
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-filescan", dest="filescan",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",
-                        default='pancreas_ct?.nii.gz')
+                        default='img?_bcv_CT.nii.gz')  # pancreas_ct?.nii.gz
     parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="label_ct?.nii.gz")
+                        default="seg?_bcv_CT.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
                         default="output/obeliskhybrid/")
 

@@ -13,6 +13,28 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+class ImgTransform:
+    """
+    Image intensity normalization.
+
+    Params:
+        :scale_type: normalization way, default mean-std scaled
+        :img: ndarray or tensor
+    Return:
+        scaled img
+    """
+    def __init__(self, scale_type="mean-std"):
+        assert scale_type in ["mean-std", "max-min"], \
+            f"scale type include ['mean-std', 'max-min'], but got {scale_type}"
+        self.scale_type = scale_type
+
+    def __call__(self, img):
+        if self.scale_type == "mean-std":
+            return (img - img.mean()) / img.std()
+        if self.scale_type == "max-min":
+            return (img - img.min()) / (img.max() - img.min())
+
+
 def get_cosine_schedule_with_warmup(optimizer,
                                     warmup_steps,
                                     total_steps,
