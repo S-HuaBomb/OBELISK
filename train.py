@@ -201,10 +201,9 @@ def main():
             predict = net(imgs_cuda)
 
             ohem_loss = ohem_criterion(F.log_softmax(predict, dim=1), y_label)
-            if dice_weight != 0. and ohem_weight != 0.:
-                # if total_loss = dice + ohem, dice should not use class weight
-                dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels)  # , class_weight
-            elif ohem_weight == 0.:
+            # if total_loss = dice + ohem, dice should not use class weight
+            dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels)  # , class_weight
+            if ohem_weight == 0.:
                 # if total_loss = dice, dice should use class weight
                 dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels, class_weight)
             total_loss = dice_weight * dice_loss + ohem_weight * ohem_loss
