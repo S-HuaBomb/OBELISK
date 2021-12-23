@@ -3,8 +3,7 @@ preprocess/MICCAI2021/*
 .idea
 raw_dicom_pancreasCT/*
 *.nii.gz
-train.slurm
-test.slurm
+*.slurm
 __pycache__/
 output/*
 logs/*
