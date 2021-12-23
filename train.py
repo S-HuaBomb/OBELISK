@@ -40,7 +40,7 @@ def main():
                         default='preprocess/datasets/process_labels')
     parser.add_argument("-scannumbers", dest="scannumbers",
                         help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
-                        default="4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 30 "
+                        default="4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 "
                                 "31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49",
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-filescan", dest="filescan",
@@ -102,7 +102,7 @@ def main():
                             image_name=file_cts,
                             label_folder=d_options['labelfolder'],
                             label_name=file_labels,
-                            scannumbers=[1, 2, 3, 4, 5])
+                            scannumbers=[1, 2, 3, 5, 6, 30])
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=2)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1)
