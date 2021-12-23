@@ -40,8 +40,8 @@ def main():
                         default='preprocess/datasets/process_labels')
     parser.add_argument("-scannumbers", dest="scannumbers",
                         help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
-                        default="10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 30 "
-                                "31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 9",
+                        default="4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 30 "
+                                "31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49",
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-filescan", dest="filescan",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",
@@ -201,7 +201,12 @@ def main():
             predict = net(imgs_cuda)
 
             ohem_loss = ohem_criterion(F.log_softmax(predict, dim=1), y_label)
-            dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels, class_weight)
+            if dice_weight != 0. and ohem_weight != 0.:
+                # if total_loss = dice + ohem, dice should not use class weight
+                dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels)  # , class_weight
+            elif ohem_weight == 0.:
+                # if total_loss = dice, dice should use class weight
+                dice_loss = multi_class_dice_loss(F.softmax(predict, dim=1), y_label, num_labels, class_weight)
             total_loss = dice_weight * dice_loss + ohem_weight * ohem_loss
             # loss = DiceLoss.apply(F.softmax(predict, dim=1), y_label)
             total_loss.backward()
