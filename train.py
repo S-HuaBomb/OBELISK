@@ -161,20 +161,20 @@ def main():
     logger.info(f'Training set sizes: {len(train_dataset)}, Validation set sizes: {len(val_dataset)}')
 
     if is_visdom:
-        vis = visdom.Visdom()  # 用 visdom 实时可视化loss曲线
-        logger.info("visdom 实时可视化已开启, 启动服务: python -m visdom.server")
+        vis = visdom.Visdom()  # using visdom
+        logger.info("visdom starting, open the server: python -m visdom.server")
         loss_opts = {'xlabel': 'epochs',
                      'ylabel': 'loss',
-                     'title': 'Loss 曲线',
+                     'title': 'Loss Line',
                      'legend': ['total loss', 'dice loss', 'ohem loss']}
         acc_opts = {'xlabel': 'epochs',
                     'ylabel': 'acc',
-                    'title': '精度曲线',
+                    'title': 'Acc Line',
                     'legend': ['1 spleen', '2 pancreas', '3 kidney', '4 gallbladder', '5 ?', '6 liver', '7 stomach',
                                '8 duodenum'] if d_options['dataset'] == 'tcia'
                     else ['1 liver', '2 spleen', '3 right kidney', '4 left kidney']}
-        lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': '学习率曲线'}
-        best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': '最佳验证精度'}
+        lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': 'LR Line'}
+        best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': 'Best Acc Line'}
 
     # for loop over iterations and epochs
     for epoch in range(star_epoch, end_epoch):
@@ -263,6 +263,7 @@ def main():
                 vis.line(Y=[run_loss[epoch]], X=[epoch], win='loss-', update='append', opts=loss_opts)
                 # acc line
                 vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
+                vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
                 # lr decay line
                 vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
 
