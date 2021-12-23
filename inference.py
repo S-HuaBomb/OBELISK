@@ -35,7 +35,7 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='tcia', required=False)
+    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='bcv', required=False)
     # parser.add_argument("-fold", dest="fold", help="number of training fold", default=1, required=True)
     parser.add_argument("-model", dest="model", help="filename of pytorch pth model",
                         default='models/obeliskhybrid_tcia_fold1.pth',  # models/obeliskhybrid_tcia_fold1.pth
@@ -91,8 +91,9 @@ def main():
         # pred segs: [0 1 2 3 4 5 6 7 8] segs shape: (144, 144, 144)
         print("pred segs:", np.unique(seg_pred), "segs shape:", seg_pred.shape)
         seg_img = nib.Nifti1Image(seg_pred, np.eye(4))
-        print('saving nifti file with labels')
-        nib.save(seg_img, d_options['output'].replace("?", save_name))
+        save_path = d_options['output'].replace("?", save_name)
+        print(f'saving inference seg nifti file to {save_path}')
+        nib.save(seg_img, save_path)
 
         if seg_val is not None:
             dice = dice_coeff(torch.from_numpy(seg_pred), seg_val, predict.size(1))
