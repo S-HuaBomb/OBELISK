@@ -51,8 +51,7 @@ def main():
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
                         default="output/preds/pred?_bcv_CT.nii.gz")
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default="preprocess/datasets/process_labels/label_ct11.nii.gz",
-                        required=False)
+                        default=None, required=False)
 
     options = parser.parse_args()
     d_options = vars(options)
@@ -104,7 +103,9 @@ def main():
     if os.path.isfile(d_options['input']):
         img_val = torch.from_numpy(nib.load(d_options['input']).get_fdata()).float().unsqueeze(0).unsqueeze(0)
         img_val = (img_val - img_val.mean()) / img_val.std()  # mean-std scale
-        seg_val = torch.from_numpy(nib.load(d_options['groundtruth']).get_data()).long().unsqueeze(0)
+        if d_options['groundtruth'] is not None:
+            seg_val = torch.from_numpy(nib.load(d_options['groundtruth']).get_data()).long().unsqueeze(0)
+        else: seg_val = None
         inference(img_val, seg_val, save_name='')
     elif os.path.isdir(d_options['input']):
         test_dataset = MyDataset(image_folder=d_options['input'],
