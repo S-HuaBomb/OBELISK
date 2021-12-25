@@ -271,7 +271,7 @@ def main():
                 vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
                 vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
                 # lr decay line
-                vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
+                vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts={'color': 'red'})
 
             net.cpu()
 
