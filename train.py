@@ -21,7 +21,7 @@ from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedul
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
 from utils.losses import OHEMLoss, multi_class_dice_loss
-from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
+from models.obelisk import Obelisk_Unet
 
 
 def split_at(s, c, n):
@@ -132,7 +132,7 @@ def main():
         full_res = torch.tensor([144, 144, 144]).long()
     elif d_options['dataset'] == 'bcv':
         full_res = torch.tensor([192, 160, 192]).long()  # full resolution
-    net = obeliskhybrid_tcia(num_labels, full_res)  # default obeliskhybrid_tcia
+    net = Obelisk_Unet(num_labels, full_res)
     net.cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=d_options['lr'], weight_decay=0.00001)

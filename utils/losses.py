@@ -99,6 +99,96 @@ def multi_class_dice_loss(soft_pred, target, num_labels, weights=None):
     return loss
 
 
+def gradient_loss(s, penalty='l2'):
+    """
+    displacement regularization loss
+    """
+    dy = torch.abs(s[:, :, 1:, :, :] - s[:, :, :-1, :, :])
+    dx = torch.abs(s[:, :, :, 1:, :] - s[:, :, :, :-1, :])
+    dz = torch.abs(s[:, :, :, :, 1:] - s[:, :, :, :, :-1])
+
+    if (penalty == 'l2'):
+        dy = dy * dy
+        dx = dx * dx
+        dz = dz * dz
+
+    d = torch.mean(dx) + torch.mean(dy) + torch.mean(dz)
+    return d / 3.0
+
+
+def pdist_squared(x):
+    xx = (x ** 2).sum(dim=1).unsqueeze(2)
+    yy = xx.permute(0, 2, 1)
+    dist = xx + yy - 2.0 * torch.bmm(x.permute(0, 2, 1), x)
+    dist[dist != dist] = 0
+    dist = torch.clamp(dist, 0.0, 255.0)
+    return dist
+
+
+def MIND_SSC(img, radius=2, dilation=2):
+    """
+    *Preliminary* pytorch implementation.
+    MIND-SSC Losses for VoxelMorph
+    """
+    # see http://mpheinrich.de/pub/miccai2013_943_mheinrich.pdf for details on the MIND-SSC descriptor
+
+    # kernel size
+    kernel_size = radius * 2 + 1
+
+    # define start and end locations for self-similarity pattern
+    six_neighbourhood = torch.tensor([[0, 1, 1],
+                                      [1, 1, 0],
+                                      [1, 0, 1],
+                                      [1, 1, 2],
+                                      [2, 1, 1],
+                                      [1, 2, 1]]).long()
+
+    # squared distances
+    dist = pdist_squared(six_neighbourhood.t().unsqueeze(0)).squeeze(0)
+
+    # define comparison mask
+    x, y = torch.meshgrid(torch.arange(6), torch.arange(6))
+    mask = ((x > y).view(-1) & (dist == 2).view(-1))
+
+    # build kernel
+    idx_shift1 = six_neighbourhood.unsqueeze(1).repeat(1, 6, 1).view(-1, 3)[mask, :]
+    idx_shift2 = six_neighbourhood.unsqueeze(0).repeat(6, 1, 1).view(-1, 3)[mask, :]
+    mshift1 = torch.zeros(12, 1, 3, 3, 3)  # .cuda()
+    mshift1.view(-1)[torch.arange(12) * 27 + idx_shift1[:, 0] * 9 + idx_shift1[:, 1] * 3 + idx_shift1[:, 2]] = 1
+    mshift2 = torch.zeros(12, 1, 3, 3, 3)  # .cuda()
+    mshift2.view(-1)[torch.arange(12) * 27 + idx_shift2[:, 0] * 9 + idx_shift2[:, 1] * 3 + idx_shift2[:, 2]] = 1
+    rpad1 = nn.ReplicationPad3d(dilation)
+    rpad2 = nn.ReplicationPad3d(radius)
+
+    # compute patch-ssd
+    ssd = F.avg_pool3d(rpad2(
+        (F.conv3d(rpad1(img), mshift1, dilation=dilation) - F.conv3d(rpad1(img), mshift2, dilation=dilation)) ** 2),
+                       kernel_size, stride=1)
+
+    # MIND equation
+    mind = ssd - torch.min(ssd, 1, keepdim=True)[0]
+    mind_var = torch.mean(mind, 1, keepdim=True)
+    mind_var = mind_var.cpu().data
+    mind_var = torch.clamp(mind_var, mind_var.mean() * 0.001, mind_var.mean() * 1000)
+
+    device = torch.device('cuda')
+    mind_var = mind_var  # .to(device)
+    mind /= mind_var
+    mind = torch.exp(-mind)
+
+    # permute to have same ordering as C++ code
+    mind = mind[:, torch.tensor([6, 8, 1, 11, 2, 10, 0, 7, 9, 4, 5, 3]).long(), :, :, :]
+
+    return mind
+
+
+def MIND_SSC_loss(x, y):
+    """
+    The loss is small, even the voxel intensity distribution of fake image is so difference, loss.item < 0.14
+    """
+    return torch.mean((MIND_SSC(x) - MIND_SSC(y)) ** 2)
+
+
 if __name__ == "__main__":
     # pred_seg = torch.randn(size=(2, 9, 10, 10, 10), dtype=torch.float32, requires_grad=True)  # 2 个 batch，9 个分类
     # label = torch.randint(0, 9, size=(2, 10, 10, 10), dtype=torch.long)
@@ -153,13 +243,31 @@ if __name__ == "__main__":
     # loss_d.backward()
     # print(f"Dice pred_very_poor: {loss_d.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
 
-    loss_md = multi_class_dice_loss(F.softmax(pred_very_good, dim=1), label, 2)
-    loss_md.requires_grad_(True)
-    loss_md.backward()
-    print(f"Dice pred_very_good: {loss_md.item()}, "
-          f"is_leaf: {pred_very_good.is_leaf}, "
-          f"grad: {pred_very_good.grad}")  # Dice pred_very_good: 0.0
-    loss_md = multi_class_dice_loss(F.softmax(pred_very_poor, dim=1), label, 2)
-    loss_md.requires_grad_(True)
-    loss_md.backward()
-    print(f"Dice pred_very_poor: {loss_md.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
+    # loss_md = multi_class_dice_loss(F.softmax(pred_very_good, dim=1), label, 2)
+    # loss_md.requires_grad_(True)
+    # loss_md.backward()
+    # print(f"Dice pred_very_good: {loss_md.item()}, "
+    #       f"is_leaf: {pred_very_good.is_leaf}, "
+    #       f"grad: {pred_very_good.grad}")  # Dice pred_very_good: 0.0
+    # loss_md = multi_class_dice_loss(F.softmax(pred_very_poor, dim=1), label, 2)
+    # loss_md.requires_grad_(True)
+    # loss_md.backward()
+    # print(f"Dice pred_very_poor: {loss_md.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
+
+    fake_img = torch.randn(3, 1, 24, 32, 32, dtype=torch.float32, requires_grad=True)  # [N, C, H, W, D]
+    print(f"fake image shape: {fake_img.shape}, requires_grad: {fake_img.requires_grad}")
+    loss_MS = MIND_SSC_loss(fake_img, fake_img)
+    loss_MS.requires_grad_(True)
+    loss_MS.backward()
+    print(f"MIND pred_very_good: {loss_MS.item()}, "
+          f"is_leaf: {fake_img.is_leaf}")  # MIND pred_very_good: 0.0, is_leaf: True
+    fake_img1 = torch.randint(-13, 4, size=(3, 1, 24, 32, 32), dtype=torch.float32)  # [N, C, H, W, D]
+    fake_img1.requires_grad_(True)
+    fake_img2 = torch.randint(43, 101, size=(3, 1, 24, 32, 32), dtype=torch.float32)
+    fake_img2.requires_grad_(True)
+    loss_MS = MIND_SSC_loss(fake_img1, fake_img2)
+    loss_MS.requires_grad_(True)
+    loss_MS.backward()
+    print(f"MIND pred_very_poor: {loss_MS.item()}, "
+          f"is_leaf: {fake_img2.is_leaf}")
+    # MIND pred_very_poor: 0.13xxxx, is_leaf: True. The loss is small, even the distribute of fake image is so difference

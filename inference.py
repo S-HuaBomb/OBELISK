@@ -17,7 +17,7 @@ cuda_idx = 0
 from utils.utils import init_weights, countParam, dice_coeff
 from utils.datasets import MyDataset
 from torch.utils.data import DataLoader
-from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
+from models.obelisk import Obelisk_Unet
 
 
 # import matplotlib
@@ -66,7 +66,7 @@ def main():
         full_res = torch.tensor([192, 160, 192]).long()
 
     # load pretrained OBELISK model
-    net = obeliskhybrid_tcia(class_num, full_res)  # has 8 anatomical foreground labels
+    net = Obelisk_Unet(class_num, full_res)  # has 8 anatomical foreground labels
     net.load_state_dict(obelisk["checkpoint"])
     print('Successful loaded model with', countParam(net), 'parameters')
 
@@ -105,7 +105,8 @@ def main():
         img_val = (img_val - img_val.mean()) / img_val.std()  # mean-std scale
         if d_options['groundtruth'] is not None:
             seg_val = torch.from_numpy(nib.load(d_options['groundtruth']).get_data()).long().unsqueeze(0)
-        else: seg_val = None
+        else:
+            seg_val = None
         inference(img_val, seg_val, save_name='')
     elif os.path.isdir(d_options['input']):
         test_dataset = MyDataset(image_folder=d_options['input'],

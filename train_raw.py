@@ -16,7 +16,7 @@ import argparse
 cuda_idx = 0
 
 from utils import init_weights, countParam, augmentAffine, my_ohem, dice_coeff, Logger
-from models import *  # obeliskhybrid_tcia, obeliskhybrid_visceral
+from models.obelisk import Obelisk_Unet
 
 
 def split_at(s, c, n):
@@ -111,7 +111,7 @@ def main():
     W_in1 = imgs.size(4)
     full_res = torch.Tensor([D_in1, H_in1, W_in1]).long()  # full resolution
 
-    net = obeliskhybrid_tcia(num_labels)
+    net = Obelisk_Unet(num_labels, full_res)
     net.apply(init_weights)
     print('obelisk params', countParam(net))
 
