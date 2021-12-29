@@ -64,7 +64,7 @@ def main():
                         type=int, default=2)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=0.005)  # 0.005
-    parser.add_argument("--alpha", type=float, help="weight for regularization loss",
+    parser.add_argument("-alpha", type=float, help="weight for regularization loss",
                         dest="alpha", default=2.0)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
