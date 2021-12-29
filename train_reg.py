@@ -150,11 +150,13 @@ def main():
     elif d_options['dataset'] == 'bcv':
         full_res = [192, 160, 192]  # full resolution
     reg_net = Reg_Obelisk_Unet(num_labels, full_res, for_reg=True)
-    STN = SpatialTransformer(full_res)
+    STN_train = SpatialTransformer(full_res)
+    STN_val = SpatialTransformer(full_res, mode="nearest")  # for label aligned validation
     reg_net.cuda()
-    STN.cuda()
+    STN_train.cuda().train()
+    STN_val.cuda().eval()  # just for val
 
-    # STN has no trainable parameters
+    # STN_train has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.00001)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
     scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
@@ -176,6 +178,7 @@ def main():
         reg_net.apply(init_weights)
 
     logger.info(f'obelisk params: {countParam(reg_net)}')  # obelisk params 252509
+    logger.info(f'STN params: {countParam(STN_train)}')  # obelisk params 252509
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
     run_loss = np.zeros([end_epoch, 3])
@@ -227,7 +230,7 @@ def main():
 
             # Run the data through the model to produce warp and flow field
             flow_m2f = reg_net(moving_img, fixed_img)
-            m2f = STN(moving_img, flow_m2f)
+            m2f = STN_train(moving_img, flow_m2f)
 
             # Calculate loss
             sim_loss = MIND_SSC_loss(m2f, fixed_img)
@@ -263,10 +266,10 @@ def main():
 
                 with torch.no_grad():
                     flow_m2f = reg_net(moving_img, fixed_img)
-                    m2f_label = STN(moving_label, flow_m2f)
+                    m2f_label = STN_val(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(m2f_label.cpu(), fixed_label.cpu(), num_labels)
+                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label.cpu(), num_labels)
                 dice_all_val[val_idx] = dice_one_val
                 del flow_m2f
                 del m2f_label
@@ -294,7 +297,7 @@ def main():
                 vis.line(Y=[run_loss[epoch]], X=[epoch], win='loss-', update='append', opts=loss_opts)
                 # acc line
                 vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
-                vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc-', update='append', opts={'color': 'red'})
+                vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
                 # lr decay line
                 vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
 
@@ -313,8 +316,8 @@ def main():
             if is_best:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
-                if is_visdom:
-                    vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+                # if is_visdom:
+                #     vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
 
             reg_net.cuda()
 
