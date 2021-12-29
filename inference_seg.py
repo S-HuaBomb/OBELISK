@@ -1,9 +1,7 @@
 from __future__ import print_function
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
-import torch.optim as optim
 import time
 import os
 import sys
@@ -14,7 +12,7 @@ import argparse
 
 cuda_idx = 0
 
-from utils.utils import init_weights, countParam, dice_coeff
+from utils.utils import countParam, dice_coeff
 from utils.datasets import MyDataset
 from torch.utils.data import DataLoader
 from models.obelisk import Obelisk_Unet
@@ -30,7 +28,7 @@ def split_at(s, c, n):
 
 def main():
     """
-    python inference.py -input preprocess/datasets/process_cts/pancreas_ct1.nii.gz -output mylabel_ct1.nii.gz -groundtruth preprocess/datasets/process_labels/label_ct1.nii.gz
+    python inference_seg.py -input preprocess/datasets/process_cts/pancreas_ct1.nii.gz -output mylabel_ct1.nii.gz -groundtruth preprocess/datasets/process_labels/label_ct1.nii.gz
     """
     # read/parse user command line input
     parser = argparse.ArgumentParser()
@@ -43,10 +41,10 @@ def main():
     parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
                         default="preprocess/datasets/process_cts/pancreas_ct11.nii.gz",
                         required=False)
-    parser.add_argument("-filescan", dest="filescan",
+    parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",  # img?_bcv_CT.nii.gz
                         default='img?_bcv_CT.nii.gz')
-    parser.add_argument("-fileseg", dest="fileseg", help="prototype segmentation name i.e. label_ct?.nii.gz",
+    parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="seg?_bcv_CT.nii.gz")
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
                         default="output/preds/pred?_bcv_CT.nii.gz")
@@ -110,14 +108,14 @@ def main():
         inference(img_val, seg_val, save_name='')
     elif os.path.isdir(d_options['input']):
         test_dataset = MyDataset(image_folder=d_options['input'],
-                                 image_name=d_options['filescan'],
+                                 image_name=d_options['img_name'],
                                  label_folder=d_options['groundtruth'],
-                                 label_name=d_options['fileseg'],
+                                 label_name=d_options['label_name'],
                                  scannumbers=[1, 2, 3, 4, 5])
 
         test_loader = DataLoader(dataset=test_dataset, batch_size=1)
         for idx, (img_val, seg_val) in enumerate(test_loader):
-            inference(img_val, seg_val, save_name=str(idx))
+            inference(img_val, seg_val, save_name=str(idx + 1))
 
 
 if __name__ == '__main__':
