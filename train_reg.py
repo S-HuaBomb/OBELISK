@@ -61,21 +61,21 @@ def main():
 
     # training args
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
-                        type=int, default=1)
+                        type=int, default=2)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
-                        type=float, default=0.001)  # 0.005
+                        type=float, default=0.005)  # 0.005
     parser.add_argument("--alpha", type=float, help="weight for regularization loss",
                         dest="alpha", default=2.0)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
                         type=float, default=1.0)
-    parser.add_argument("-ohem_weight", dest="ohem_weight", help="OHEM loss weight",
+    parser.add_argument("-mind_weight", dest="mind_weight", help="OHEM loss weight",
                         type=float, default=1.0)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
-                        type=int, default=350)
+                        type=int, default=500)
     parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training", default=None)
-    parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=1)
+    parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=5)
     parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
                         type=bool, default=False)
 
@@ -184,7 +184,7 @@ def main():
         loss_opts = {'xlabel': 'epochs',
                      'ylabel': 'loss',
                      'title': 'Loss Line',
-                     'legend': ['total loss', 'dice loss', 'ohem loss']}
+                     'legend': ['total loss', 'mind loss', 'grad loss']}
         acc_opts = {'xlabel': 'epochs',
                     'ylabel': 'acc',
                     'title': 'Acc Line',
@@ -254,7 +254,7 @@ def main():
 
             for val_idx, (imgs, segs) in enumerate(val_loader):
                 moving_img = imgs.cuda()
-                moving_label = segs.float().cuda()
+                moving_label = segs.unsqueeze(1).float().cuda()
                 t0 = time.time()
 
                 with torch.no_grad():
@@ -262,7 +262,7 @@ def main():
                     m2f_label = STN(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(m2f_label, fixed_label, num_labels)
+                    dice_one_val = dice_coeff(m2f_label.cpu(), fixed_label.cpu(), num_labels)
                 dice_all_val[val_idx] = dice_one_val
                 del flow_m2f
                 del m2f_label
@@ -309,7 +309,8 @@ def main():
             if is_best:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
-                vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+                if is_visdom:
+                    vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
 
             reg_net.cuda()
 
