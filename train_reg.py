@@ -232,12 +232,12 @@ def main():
             # Calculate loss
             sim_loss = MIND_SSC_loss(m2f, fixed_img)
             grad_loss = gradient_loss(flow_m2f)
-            total_loss = sim_loss + args.alpha * grad_loss
+            total_loss = args.mind_weight * sim_loss + args.alpha * grad_loss
 
             total_loss.backward()
 
             run_loss[epoch, 0] += total_loss.item()
-            run_loss[epoch, 1] += sim_loss.item()
+            run_loss[epoch, 1] += args.mind_weight * sim_loss.item()
             run_loss[epoch, 2] += args.alpha * grad_loss.item()
 
             optimizer.step()
