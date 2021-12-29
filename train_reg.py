@@ -60,6 +60,8 @@ def main():
                         default="output/obeliskhybrid_chaos_reg/")
 
     # training args
+    parser.add_argument("-num_workers", dest="num_workers", help="Dataloader num_workers",
+                        type=int, default=2)
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=2)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
@@ -116,14 +118,16 @@ def main():
                             label_name=label_name,
                             scannumbers=[1, 3, 5, 6, 30])
 
-    fix_dataset = MyDataset(image_folder=img_folder,
-                            image_name=img_name,
-                            label_folder=label_folder,
-                            label_name=label_name,
-                            scannumbers=[26])
-    fix_loader = DataLoader(dataset=fix_dataset)
+    atlas_dataset = MyDataset(image_folder=img_folder,
+                              image_name=img_name,
+                              label_folder=label_folder,
+                              label_name=label_name,
+                              scannumbers=[26])
+    atlas_loader = DataLoader(dataset=atlas_dataset)
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=2)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'],
+                              shuffle=True,
+                              num_workers=args.num_workers)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1)
 
     end_epoch = d_options['epochs']  # 300
@@ -195,9 +199,9 @@ def main():
         best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': 'Best Acc Line'}
 
     batch_size = d_options['batch_size']
-    fixed_loader = iter(fix_loader)
-    fixed_img, fixed_label = next(fixed_loader)
-    fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])
+    atlas_loader = iter(atlas_loader)
+    fixed_img, fixed_label = next(atlas_loader)
+    fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])  # fit batch size
     fixed_label = fixed_label.expand(batch_size, *fixed_label.shape[1:])
     fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()
 
