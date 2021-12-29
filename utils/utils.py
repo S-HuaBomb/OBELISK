@@ -82,7 +82,7 @@ def dice_coeff(outputs, labels, max_label):
     return np.asarray(dice)
 
 
-def get_logger(output, name=__name__, log_level=1):
+def get_logger(output, name='train', log_level=1):
     log_levels = {
         0: logging.WARNING,
         1: logging.INFO,
@@ -91,13 +91,13 @@ def get_logger(output, name=__name__, log_level=1):
     logging.basicConfig(format='%(asctime)s - %(filename)s[line:%(lineno)d] - %(levelname)s: %(message)s',
                         datefmt="%m/%d/%Y %H:%M:%S",
                         level=log_levels[log_level],
-                        filename=f'{output}/train.log',
+                        filename=f'{output}/{name}.log',
                         filemode='a')
 
     msg_log_level = 'log_level option {} is invalid. Valid options are {}.'.format(log_level,
                                                                                    log_levels.keys())
     assert log_level in log_levels, msg_log_level
-    logger = logging.getLogger(name)
+    logger = logging.getLogger(__name__)
     chlr = logging.StreamHandler()  # 输出到控制台的handler
     logger.addHandler(chlr)
     return logger

@@ -153,9 +153,9 @@ def MIND_SSC(img, radius=2, dilation=2):
     # build kernel
     idx_shift1 = six_neighbourhood.unsqueeze(1).repeat(1, 6, 1).view(-1, 3)[mask, :]
     idx_shift2 = six_neighbourhood.unsqueeze(0).repeat(6, 1, 1).view(-1, 3)[mask, :]
-    mshift1 = torch.zeros(12, 1, 3, 3, 3)  # .cuda()
+    mshift1 = torch.zeros(12, 1, 3, 3, 3).cuda()  # .cuda()
     mshift1.view(-1)[torch.arange(12) * 27 + idx_shift1[:, 0] * 9 + idx_shift1[:, 1] * 3 + idx_shift1[:, 2]] = 1
-    mshift2 = torch.zeros(12, 1, 3, 3, 3)  # .cuda()
+    mshift2 = torch.zeros(12, 1, 3, 3, 3).cuda()  # .cuda()
     mshift2.view(-1)[torch.arange(12) * 27 + idx_shift2[:, 0] * 9 + idx_shift2[:, 1] * 3 + idx_shift2[:, 2]] = 1
     rpad1 = nn.ReplicationPad3d(dilation)
     rpad2 = nn.ReplicationPad3d(radius)
@@ -172,7 +172,7 @@ def MIND_SSC(img, radius=2, dilation=2):
     mind_var = torch.clamp(mind_var, mind_var.mean() * 0.001, mind_var.mean() * 1000)
 
     device = torch.device('cuda')
-    mind_var = mind_var  # .to(device)
+    mind_var = mind_var.to(device)  # .to(device)
     mind /= mind_var
     mind = torch.exp(-mind)
 
