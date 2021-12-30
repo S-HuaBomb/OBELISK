@@ -17,7 +17,8 @@ import visdom
 
 import argparse
 
-from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
+from utils.utils import init_weights, countParam, dice_coeff, \
+    get_cosine_schedule_with_warmup, get_logger, ImgTransform
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
 from utils.losses import OHEMLoss, multi_class_dice_loss, MIND_SSC_loss, gradient_loss
@@ -110,19 +111,22 @@ def main():
                               image_name=img_name,
                               label_folder=label_folder,
                               label_name=label_name,
-                              scannumbers=scannumbers)
+                              scannumbers=scannumbers,
+                              img_transform=ImgTransform(scale_type="max-min"))
 
     val_dataset = MyDataset(image_folder=img_folder,
                             image_name=img_name,
                             label_folder=label_folder,
                             label_name=label_name,
-                            scannumbers=[1, 3, 5, 6, 30])
+                            scannumbers=[1, 3, 5, 6, 30],
+                            img_transform=ImgTransform(scale_type="max-min"))
 
     atlas_dataset = MyDataset(image_folder=img_folder,
                               image_name=img_name,
                               label_folder=label_folder,
                               label_name=label_name,
-                              scannumbers=[26])
+                              scannumbers=[26],
+                              img_transform=ImgTransform(scale_type="max-min"))
     atlas_loader = DataLoader(dataset=atlas_dataset)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'],
