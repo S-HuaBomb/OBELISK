@@ -149,7 +149,7 @@ def main():
         full_res = [144, 144, 144]
     elif d_options['dataset'] == 'bcv':
         full_res = [192, 160, 192]  # full resolution
-    reg_net = Reg_Obelisk_Unet(num_labels, full_res, for_reg=True)
+    reg_net = Reg_Obelisk_Unet(full_res, for_reg=True)
     STN_train = SpatialTransformer(full_res)
     STN_val = SpatialTransformer(full_res, mode="nearest")  # for label aligned validation
     reg_net.cuda()

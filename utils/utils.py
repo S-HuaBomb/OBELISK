@@ -82,6 +82,13 @@ def dice_coeff(outputs, labels, max_label):
     return np.asarray(dice)
 
 
+def dice_coefficient(y_true, y_pred, smooth=0.00001):
+    y_true_f = torch.flatten(y_true)
+    y_pred_f = torch.flatten(y_pred)
+    intersection = torch.sum(y_true_f * y_pred_f)
+    return (2. * intersection + smooth) / (torch.sum(y_true_f * y_true_f) + torch.sum(y_pred_f * y_pred_f) + smooth)
+
+
 def get_logger(output, name='train', log_level=1):
     log_levels = {
         0: logging.WARNING,

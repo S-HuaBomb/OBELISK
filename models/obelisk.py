@@ -163,34 +163,23 @@ class Obelisk_Unet(nn.Module):
 
 
 class Reg_Obelisk_Unet(nn.Module):
-    def __init__(self, num_labels, full_res, for_reg=True):
+    def __init__(self, full_res, for_reg=True):
         super(Reg_Obelisk_Unet, self).__init__()
-        self.num_labels = num_labels
         self.for_reg = for_reg
-        D_in2 = full_res[0]  # 192
-        H_in2 = full_res[1]  # 160
-        W_in2 = full_res[2]  # 192
-        D_in3 = D_in2 // 2  # 96
-        H_in3 = H_in2 // 2  # 80
-        W_in3 = W_in2 // 2  # 96
+        D_in2 = full_res[0]  # 192 160
+        H_in2 = full_res[1]  # 160 192
+        W_in2 = full_res[2]  # 192 160
+        D_grid1 = D_in2 // 2  # 96 80
+        H_grid1 = H_in2 // 2  # 80 96
+        W_grid1 = W_in2 // 2  # 96 80
 
-        D_in4 = D_in3 // 2  # 48
-        H_in4 = H_in3 // 2  # 40
-        W_in4 = W_in3 // 2  # 48
+        D_grid2 = D_grid1 // 2  # 48 40
+        H_grid2 = H_grid1 // 2  # 40 48
+        W_grid2 = W_grid1 // 2  # 48 40
 
-        D_in5 = D_in4 // 2  # 24
-        H_in5 = H_in4 // 2  # 20
-        W_in5 = W_in4 // 2  # 24
-
-        D_grid1 = D_in3
-        H_grid1 = H_in3
-        W_grid1 = W_in3
-        D_grid2 = D_in4
-        H_grid2 = H_in4
-        W_grid2 = W_in4
-        D_grid3 = D_in5
-        H_grid3 = H_in4
-        W_grid3 = W_in5
+        D_grid3 = D_grid2 // 2  # 24 20
+        H_grid3 = H_grid2  # // 2  # 40 48
+        W_grid3 = W_grid2 // 2  # 24 20
 
         self.D_grid1 = D_grid1
         self.H_grid1 = H_grid1
@@ -199,7 +188,7 @@ class Reg_Obelisk_Unet(nn.Module):
         self.H_grid2 = H_grid2
         self.W_grid2 = W_grid2
         self.D_grid3 = D_grid3
-        self.H_grid3 = H_grid3
+        self.H_grid3 = H_grid2
         self.W_grid3 = W_grid3
         # U-Net Encoder
         self.conv0 = nn.Conv3d(2, 4, 3, padding=1)  # mov and fix will be concatenated in channel dim
@@ -255,16 +244,15 @@ class Reg_Obelisk_Unet(nn.Module):
         self.batch6bU = nn.BatchNorm3d(32)
         self.conv6U = nn.Conv3d(64, 12, 3, padding=1)  # 64#48
         self.batch6U = nn.BatchNorm3d(12)
-        self.conv7U = nn.Conv3d(16, num_labels, 3, padding=1)  # 24#16#24
-        self.batch7U = nn.BatchNorm3d(num_labels)
-        self.conv77U = nn.Conv3d(num_labels, num_labels, 1)
+        self.conv7U = nn.Conv3d(16, 16, 3, padding=1)  # 24#16#24
+        self.batch7U = nn.BatchNorm3d(16)
         if self.for_reg:
             # for registration, output flow feature get shape: [N, D, W, H, 3]
-            self.flow = nn.Conv3d(num_labels, 3, 3, padding=1)
+            self.flow = nn.Conv3d(16, 3, 3, padding=1)
             # Make flow weights + bias small. Not sure this is necessary.
-            nd = Normal(0, 1e-5)
-            self.flow.weight = nn.Parameter(nd.sample(self.flow.weight.shape))
-            self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
+            # nd = Normal(0, 1e-5)
+            # self.flow.weight = nn.Parameter(nd.sample(self.flow.weight.shape))
+            # self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
 
     def forward(self, src, tgt):
         x = torch.cat([src, tgt], dim=1)
@@ -312,7 +300,6 @@ class Reg_Obelisk_Unet(nn.Module):
         x = F.interpolate(x, size=[D, H, W], mode='trilinear', align_corners=False)
         x = F.leaky_relu(self.batch7U(self.conv7U(torch.cat((x, x1), 1))), leakage)
 
-        x = self.conv77U(x)
         if self.for_reg:
             x = self.flow(x)
 
