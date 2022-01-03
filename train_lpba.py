@@ -14,6 +14,7 @@ import visdom
 
 import argparse
 
+from utils.metrics import Get_Jac
 from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset, LPBADataset
@@ -190,8 +191,8 @@ def main():
     fixed_img_, fixed_label_= next(fixed_loader)
     fixed_img = fixed_img_.expand(batch_size, *fixed_img_.shape[1:])
     fixed_label = fixed_label_.expand(batch_size, *fixed_label_.shape[1:])
-    fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()
-    logger.info(f"fixed_img shape: {fixed_img.shape}, fixed_label shape: {fixed_label.shape}")
+    fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()  # batch_size=batch_size for train
+    fixed_img_, fixed_label_ = fixed_img_.cuda(), fixed_label_.cuda()  # batch_size=1 for val
 
     # mse_loss = torch.nn.MSELoss()
     # ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
@@ -252,6 +253,7 @@ def main():
 
         if epoch % d_options['interval'] == 0:
             reg_net.eval()
+            Jac_std, Jac_neg = [], []
 
             for val_idx, (imgs, segs) in enumerate(val_loader):
                 moving_img = imgs.cuda()
@@ -265,6 +267,10 @@ def main():
                     time_i = (time.time() - t0)
                     dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu(), num_labels)
                 dice_all_val[val_idx] = dice_one_val
+                Jac = Get_Jac(flow_m2f.cpu())
+                Jac_std.append(Jac.std())
+                Jac_neg.append(100 * ((Jac <= 0.).sum() / Jac.numel()))
+
                 del flow_m2f
                 del m2f_label
                 torch.cuda.empty_cache()
@@ -284,7 +290,7 @@ def main():
             logger.info(
                 f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch, 0] :.3f}, "
                 f"stddev {torch.std(reg_net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
-                f"best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
+                f"stdJac {np.mean(Jac_std)} %Jac<0 {np.mean(Jac_neg)} best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
 
             if is_visdom:
                 # loss line
