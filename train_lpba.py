@@ -59,7 +59,7 @@ def main():
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
-                        type=float, default=4e-4)  # 0.005
+                        type=float, default=0.005)  # 0.005 for AdamW, 4e-4 for Adam
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
                         dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
@@ -81,7 +81,7 @@ def main():
 
     args = parser.parse_args()
     d_options = vars(args)
-    is_visdom = d_options["visdom"]
+    is_visdom = args.visdom
 
     if not os.path.exists(d_options['output']):
         os.mkdir(d_options['output'])
@@ -119,7 +119,7 @@ def main():
                               scannumbers=[1])
 
     fix_loader = DataLoader(dataset=fix_dataset)
-    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=1)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=2)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1)
 
     end_epoch = d_options['epochs']  # 300
@@ -141,7 +141,7 @@ def main():
     STN_val.cuda().eval()  # just for validation
 
     # STN has no trainable parameters
-    optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.00001)
+    optimizer = optim.AdamW(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.01)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
     # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
@@ -185,12 +185,13 @@ def main():
         lr_opts = {'xlabel': 'epochs', 'ylabel': 'lr', 'title': 'LR Line'}
         best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': 'Best Acc Line'}
 
-    batch_size = d_options['batch_size']
+    batch_size = args.batch_size
     fixed_loader = iter(fix_loader)
     fixed_img, fixed_label = next(fixed_loader)
     fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])
     fixed_label = fixed_label.expand(batch_size, *fixed_label.shape[1:])
     fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()
+    logger.info(f"fixed_img shape: {fixed_img.shape}, fixed_label shape: {fixed_label.shape}")
 
     # mse_loss = torch.nn.MSELoss()
     # ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss

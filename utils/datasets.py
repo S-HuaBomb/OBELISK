@@ -48,6 +48,8 @@ class LPBADataset(Dataset):
 
     def get_labels_num(self):
         a_label = nib.load(self.label_paths[0]).get_fdata()
+        a_label[a_label == 181.] = 0.
+        a_label[a_label == 182.] = 0.
         return int(len(np.unique(a_label)))
 
 
