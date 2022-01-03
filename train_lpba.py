@@ -187,9 +187,9 @@ def main():
 
     batch_size = args.batch_size
     fixed_loader = iter(fix_loader)
-    fixed_img, fixed_label = next(fixed_loader)
-    fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])
-    fixed_label = fixed_label.expand(batch_size, *fixed_label.shape[1:])
+    fixed_img_, fixed_label_= next(fixed_loader)
+    fixed_img = fixed_img_.expand(batch_size, *fixed_img_.shape[1:])
+    fixed_label = fixed_label_.expand(batch_size, *fixed_label_.shape[1:])
     fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()
     logger.info(f"fixed_img shape: {fixed_img.shape}, fixed_label shape: {fixed_label.shape}")
 
@@ -259,11 +259,11 @@ def main():
                 t0 = time.time()
 
                 with torch.no_grad():
-                    flow_m2f = reg_net(moving_img, fixed_img)
+                    flow_m2f = reg_net(moving_img, fixed_img_)
                     m2f_label = STN_val(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label.long().cpu(), num_labels)
+                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu(), num_labels)
                 dice_all_val[val_idx] = dice_one_val
                 del flow_m2f
                 del m2f_label
