@@ -18,7 +18,7 @@ from utils.metrics import Get_Jac
 from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset, LPBADataset
-from utils.losses import OHEMLoss, multi_class_dice_loss, MIND_SSC_loss, gradient_loss, NCCLoss
+from utils.losses import OHEMLoss, MIND_SSC_loss, gradient_loss, NCCLoss, dice_loss
 from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
 
 
@@ -61,7 +61,9 @@ def main():
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
-                        type=float, default=0.005)  # 0.005 for AdamW, 4e-4 for Adam
+                        type=float, default=4e-4)  # 0.005 for AdamW, 4e-4 for Adam
+    parser.add_argument("-apply_lr_scheduler", dest="apply_lr_scheduler", help="Need lr scheduler or not",
+                        type=bool, default=True)
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
@@ -74,7 +76,7 @@ def main():
 
     # losses args
     parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE', 'NCC'],
-                        dest="sim_loss", default='MIND')
+                        dest="sim_loss", default='NCC')
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
                         dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
@@ -141,10 +143,10 @@ def main():
         full_res = [160, 192, 160]  # full resolution
     reg_net = Reg_Obelisk_Unet_noBN(full_res)
     STN_train = SpatialTransformer(full_res)  # STN training for image align
-    STN_val = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
+    STN_label = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
     reg_net.cuda()
     STN_train.cuda().train()
-    STN_val.cuda().eval()  # just for validation
+    STN_label.cuda().eval()  # just for validation
 
     # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
@@ -164,13 +166,13 @@ def main():
         sim_criterion = NCCLoss()
         args.alpha = 1.5
     grad_criterion = gradient_loss
-    dice_criterion = multi_class_dice_loss
+    dice_criterion = dice_loss
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
         reg_net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
-        # scheduler.load_state_dict(obelisk["scheduler"])
+        scheduler.load_state_dict(obelisk["scheduler"])
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         logger.info(f"Training resume from {d_options['resume']}")
@@ -236,7 +238,8 @@ def main():
 
             # Run the data through the model to produce warp and flow field
             flow_m2f = reg_net(moving_img, fixed_img)
-            m2f = STN_train(moving_img, flow_m2f)
+            m2f_img = STN_train(moving_img, flow_m2f)
+            m2f_label = STN_label(moving_label, flow_m2f)
 
             # Calculate loss
             if epoch * len(train_loader) <= 100:
@@ -245,25 +248,28 @@ def main():
             else:
                 alpha = args.alpha
 
-            sim_loss = sim_criterion(m2f, fixed_img)
+            sim_loss = sim_criterion(m2f_img, fixed_img)
             grad_loss = grad_criterion(flow_m2f)
-            total_loss = args.sim_weight * sim_loss + alpha * grad_loss
+            dice_loss_ = dice_criterion(m2f_label, fixed_label)
+            total_loss = args.sim_weight * sim_loss + args.dice_weight * dice_loss_ + alpha * grad_loss
 
             total_loss.backward()
 
             run_loss[epoch, 0] += total_loss.item()
             run_loss[epoch, 1] += args.sim_weight * sim_loss.item()
-            run_loss[epoch, 2] += alpha * grad_loss.item()
+            run_loss[epoch, 2] += args.dice_weight * dice_loss_
+            run_loss[epoch, 3] += alpha * grad_loss.item()
 
             optimizer.step()
             del total_loss
-            del flow_m2f, m2f
+            del flow_m2f, m2f_img
             torch.cuda.empty_cache()
             del moving_img
             del moving_label
             torch.cuda.empty_cache()
 
-        scheduler.step()  # epoch wise lr decay  run_loss[epoch, 0]
+        if args.apply_lr_scheduler:
+            scheduler.step()  # epoch wise lr decay  run_loss[epoch, 0]
 
         # evaluation on training images
         t1 = time.time() - t0
@@ -279,7 +285,7 @@ def main():
 
                 with torch.no_grad():
                     flow_m2f = reg_net(moving_img, fixed_img_)
-                    m2f_label = STN_val(moving_label, flow_m2f)
+                    m2f_label = STN_label(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
                     dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu(), num_labels)

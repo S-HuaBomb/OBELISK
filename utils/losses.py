@@ -36,7 +36,24 @@ class OHEMLoss(torch.nn.NLLLoss):
         return torch.nn.functional.nll_loss(x_hn, y_hn, weight=self.weights)
 
 
+def dice_loss(output, target):
+    """
+    dice coefficient loss, not the same with 2 dice_losses below
+    """
+    assert output.size() == target.size(), "'input' and 'target' must have the same shape"
+
+    ndims = len(list(output.size())) - 2
+    vol_axes = list(range(2, ndims+2))
+    top = 2 * (target * output).sum(dim=vol_axes)
+    bottom = torch.clamp((target + output).sum(dim=vol_axes), min=1e-5)
+    dice = torch.mean(top / bottom)
+    return 1. - dice
+
+
 class DiceLoss(Function):
+    """
+    binary softmax dice loss
+    """
     @staticmethod
     def forward(ctx, input, target, save=True):
         if save:
@@ -65,7 +82,7 @@ class DiceLoss(Function):
         IoU = intersect / union
         # print('union: {:.3f}\t intersect: {:.6f}\t target_sum: {:.0f} IoU: result_sum: {:.0f} IoU {:.7f}'.format(
         #     union, intersect, target_sum, result_sum, 2*IoU))
-        out = torch.FloatTensor(1).fill_(2 * IoU)
+        out = torch.tensor(1).fill_(2 * IoU)
         ctx.intersect, ctx.union = intersect, union
         return 1 - out
 
@@ -285,16 +302,28 @@ if __name__ == "__main__":
     # print(f"OHEM pred_very_poor: {loss_o.item()}")  # OHEM pred_very_poor: 1.0
 
     # Dice_loss = DiceLoss()
-    # loss_d = DiceLoss.apply(F.softmax(pred_very_good, dim=1), label)
+    # loss_d = Dice_loss.apply(pred_very_good, label.float()).float()
     # loss_d.requires_grad_(True)
     # loss_d.backward()
     # print(f"Dice pred_very_good: {loss_d.item()}, "
     #       f"is_leaf: {pred_very_good.is_leaf}, "
     #       f"grad: {pred_very_good.grad}")  # Dice pred_very_good: 5.960464477539063e-08
-    # loss_d = DiceLoss.apply(F.softmax(pred_very_poor, dim=1), label)
+    # loss_d = DiceLoss.apply(pred_very_poor, label).float()
     # loss_d.requires_grad_(True)
     # loss_d.backward()
     # print(f"Dice pred_very_poor: {loss_d.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
+
+    pred_very_good = label.float().requires_grad_(True)
+    loss_d = dice_loss(pred_very_good, label.float())
+    loss_d.requires_grad_(True)
+    loss_d.backward()
+    print(f"Dice pred_very_good: {loss_d.item()}, "
+          f"is_leaf: {pred_very_good.is_leaf}")  # Dice pred_very_good: 5.960464477539063e-08
+    pred_very_poor = (1. - label.float()).requires_grad_(True)
+    loss_d = dice_loss(pred_very_poor, label.float())
+    loss_d.requires_grad_(True)
+    loss_d.backward()
+    print(f"Dice pred_very_poor: {loss_d.item()}")  # Dice pred_very_poor: 1.0
 
     # loss_md = multi_class_dice_loss(F.softmax(pred_very_good, dim=1), label, 2)
     # loss_md.requires_grad_(True)
@@ -307,20 +336,20 @@ if __name__ == "__main__":
     # loss_md.backward()
     # print(f"Dice pred_very_poor: {loss_md.item()}, grad: {pred_very_poor.grad}")  # Dice pred_very_poor: 1.0
 
-    fake_img = torch.randn(3, 1, 24, 32, 32, dtype=torch.float32, requires_grad=True)  # [N, C, H, W, D]
-    print(f"fake image shape: {fake_img.shape}, requires_grad: {fake_img.requires_grad}")
-    loss_MS = MIND_SSC_loss(fake_img, fake_img)
-    loss_MS.requires_grad_(True)
-    loss_MS.backward()
-    print(f"MIND pred_very_good: {loss_MS.item()}, "
-          f"is_leaf: {fake_img.is_leaf}")  # MIND pred_very_good: 0.0, is_leaf: True
-    fake_img1 = torch.randint(-13, 4, size=(3, 1, 24, 32, 32), dtype=torch.float32)  # [N, C, H, W, D]
-    fake_img1.requires_grad_(True)
-    fake_img2 = torch.randint(43, 101, size=(3, 1, 24, 32, 32), dtype=torch.float32)
-    fake_img2.requires_grad_(True)
-    loss_MS = MIND_SSC_loss(fake_img1, fake_img2)
-    loss_MS.requires_grad_(True)
-    loss_MS.backward()
-    print(f"MIND pred_very_poor: {loss_MS.item()}, "
-          f"is_leaf: {fake_img2.is_leaf}")
+    # fake_img = torch.randn(3, 1, 24, 32, 32, dtype=torch.float32, requires_grad=True)  # [N, C, H, W, D]
+    # print(f"fake image shape: {fake_img.shape}, requires_grad: {fake_img.requires_grad}")
+    # loss_MS = MIND_SSC_loss(fake_img, fake_img)
+    # loss_MS.requires_grad_(True)
+    # loss_MS.backward()
+    # print(f"MIND pred_very_good: {loss_MS.item()}, "
+    #       f"is_leaf: {fake_img.is_leaf}")  # MIND pred_very_good: 0.0, is_leaf: True
+    # fake_img1 = torch.randint(-13, 4, size=(3, 1, 24, 32, 32), dtype=torch.float32)  # [N, C, H, W, D]
+    # fake_img1.requires_grad_(True)
+    # fake_img2 = torch.randint(43, 101, size=(3, 1, 24, 32, 32), dtype=torch.float32)
+    # fake_img2.requires_grad_(True)
+    # loss_MS = MIND_SSC_loss(fake_img1, fake_img2)
+    # loss_MS.requires_grad_(True)
+    # loss_MS.backward()
+    # print(f"MIND pred_very_poor: {loss_MS.item()}, "
+    #       f"is_leaf: {fake_img2.is_leaf}")
     # MIND pred_very_poor: 0.13xxxx, is_leaf: True. The loss is small, even the distribute of fake image is so difference
