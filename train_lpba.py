@@ -18,7 +18,7 @@ from utils.metrics import Get_Jac
 from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset, LPBADataset
-from utils.losses import OHEMLoss, multi_class_dice_loss, MIND_SSC_loss, gradient_loss
+from utils.losses import OHEMLoss, multi_class_dice_loss, MIND_SSC_loss, gradient_loss, NCCLoss
 from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
 
 
@@ -73,7 +73,7 @@ def main():
                         type=bool, default=False)
 
     # losses args
-    parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE'],
+    parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE', 'NCC'],
                         dest="sim_loss", default='MIND')
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
                         dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
@@ -147,14 +147,22 @@ def main():
     STN_val.cuda().eval()  # just for validation
 
     # STN has no trainable parameters
-    optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.00001)
+    optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
     # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
                                                 warmup_steps=d_options["warmup_steps"],
                                                 total_steps=end_epoch,)
     # losses
-    sim_criterion = MIND_SSC_loss if args.sim_loss == "MIND" else nn.MSELoss()
+    if args.sim_loss == "MIND":
+        sim_criterion = MIND_SSC_loss
+        args.alpha = 4.0
+    elif args.sim_loss == "MSE":
+        sim_criterion = nn.MSELoss()
+        args.alpha = 0.025
+    elif args.sim_loss == "NCC":
+        sim_criterion = NCCLoss()
+        args.alpha = 1.5
     grad_criterion = gradient_loss
     dice_criterion = multi_class_dice_loss
 
