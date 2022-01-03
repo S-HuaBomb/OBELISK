@@ -197,7 +197,7 @@ def main():
     logger.info(f"STN params: {countParam(STN_train)}")  # STN params: 0
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
-    run_loss = np.zeros([end_epoch, 3])
+    run_loss = np.zeros([end_epoch, 4])
     dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
     logger.info(f'Training set sizes: {len(train_dataset)}, Validation set sizes: {len(val_dataset)}')
 
@@ -244,14 +244,14 @@ def main():
                     # [B, C, D, W, H]
                     torch.cuda.empty_cache()
             else:
-                moving_img, moving_label = imgs.cuda(), segs.float().cuda()
+                moving_img, moving_label = imgs.cuda(), segs.cuda()
 
             optimizer.zero_grad()
 
             # Run the data through the model to produce warp and flow field
             flow_m2f = reg_net(moving_img, fixed_img)
             m2f_img = STN_train(moving_img, flow_m2f)
-            m2f_label = STN_label(moving_label, flow_m2f)
+            m2f_label = STN_label(moving_label.float().unsqueeze(1), flow_m2f)
 
             # Calculate loss
             if epoch * len(train_loader) <= 100:
@@ -262,7 +262,7 @@ def main():
 
             sim_loss = sim_criterion(m2f_img, fixed_img)
             grad_loss = grad_criterion(flow_m2f)
-            dice_loss_ = dice_criterion(m2f_label, fixed_label) if args.weakly_sup else 0.
+            dice_loss_ = dice_criterion(m2f_label.squeeze(1), fixed_label) if args.weakly_sup else 0.
             total_loss = args.sim_weight * sim_loss + args.dice_weight * dice_loss_ + alpha * grad_loss
 
             total_loss.backward()
