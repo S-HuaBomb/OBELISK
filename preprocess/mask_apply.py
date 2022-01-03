@@ -1,5 +1,6 @@
 import os
 import numpy as np
+import SimpleITK as sitk
 import nibabel as nib
 import pathlib
 
@@ -27,12 +28,14 @@ def rename_(image_dir, label_dir, img_type="CT"):
         print(f"rename {label_name} to {new_label_name}")
 
 
-def apply_mask(image_dir, mask_dir, out_dir, img_type="CT"):
+def apply_mask(image_dir, mask_dir, out_dir):
     if not os.path.exists(out_dir):
         # os.makedirs(out_dir, exist_ok=True)
         pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-    for image_name in os.listdir(image_dir):
+    for idx, image_name in enumerate(os.listdir(image_dir)):
+        if "seg" in image_name:
+            continue
         mask_name = image_name.replace("img", "mask")
         image_path = os.path.join(image_dir, image_name)
         mask_path = os.path.join(mask_dir, mask_name)
@@ -43,12 +46,10 @@ def apply_mask(image_dir, mask_dir, out_dir, img_type="CT"):
 
         mask = nib.load(mask_path).get_fdata()
 
-        masked_img = img * mask
-        if img_type == "CT":
+        masked_img = img * mask  # mask
+        if "CT" in image_name:
             # CT 的 -1024 是黑色，MR 的 0 是黑色
             masked_img[masked_img == 0.] = -1024.
-
-        # masked_img = (masked_img - masked_img.mean()) / masked_img.std()  # mean-std scale
 
         save_path = os.path.join(out_dir, image_name)
         nib.save(nib.Nifti1Image(masked_img, affine=img_affine), save_path)
@@ -56,9 +57,9 @@ def apply_mask(image_dir, mask_dir, out_dir, img_type="CT"):
 
 
 if __name__ == "__main__":
-    image_dir = r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\auxiliary\L2R_Task1_MR\MRIs"
-    mask_dir = r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\L2R_Task1_ROIs\L2R_Task1_MR"
-    out_dir = r"./MICCAI2021/auxiliary/L2R_Task1_MR/MRIs/"
-    label_dir = r"./MICCAI2021/auxiliary/L2R_Task1_MR/labels/"
-    # apply_mask(image_dir, mask_dir, out_dir, img_type="MRI")
+    image_dir = r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\train-val\Train"
+    mask_dir = r"D:\paper_time\MICCAI\Learn2Reg2021\datasets\task1_Abdominal_MRI_CT_intra_patient\L2R_Task1_ROIs\L2R_Task1_MRCT\Train"
+    out_dir = r"./MICCAI2021//L2R_Task1_CT2MR/"
+    # label_dir = r"./MICCAI2021/auxiliary/L2R_Task1_MR/labels/"
+    apply_mask(image_dir, mask_dir, out_dir)
     # rename_(image_dir=out_dir, label_dir=label_dir, img_type='MR')

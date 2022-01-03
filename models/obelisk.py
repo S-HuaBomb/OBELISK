@@ -306,6 +306,130 @@ class Reg_Obelisk_Unet(nn.Module):
         return x
 
 
+class Reg_Obelisk_Unet_noBN(nn.Module):
+    def __init__(self, full_res):
+        super(Reg_Obelisk_Unet_noBN, self).__init__()
+        D_in2 = full_res[0]  # 192 160
+        H_in2 = full_res[1]  # 160 192
+        W_in2 = full_res[2]  # 192 160
+        D_grid1 = D_in2 // 2  # 96 80
+        H_grid1 = H_in2 // 2  # 80 96
+        W_grid1 = W_in2 // 2  # 96 80
+
+        D_grid2 = D_grid1 // 2  # 48 40
+        H_grid2 = H_grid1 // 2  # 40 48
+        W_grid2 = W_grid1 // 2  # 48 40
+
+        D_grid3 = D_grid2 // 2  # 24 20
+        H_grid3 = H_grid2  # // 2  # 40 48
+        W_grid3 = W_grid2 // 2  # 24 20
+
+        self.D_grid1 = D_grid1
+        self.H_grid1 = H_grid1
+        self.W_grid1 = W_grid1
+        self.D_grid2 = D_grid2
+        self.H_grid2 = H_grid2
+        self.W_grid2 = W_grid2
+        self.D_grid3 = D_grid3
+        self.H_grid3 = H_grid2
+        self.W_grid3 = W_grid3
+        # U-Net Encoder
+        self.conv0 = nn.Conv3d(2, 4, 3, padding=1)  # mov and fix will be concatenated in channel dim
+        self.conv1 = nn.Conv3d(4, 16, 3, stride=2, padding=1)
+        self.conv11 = nn.Conv3d(16, 16, 3, padding=1)
+        self.conv2 = nn.Conv3d(16, 32, 3, stride=2, padding=1)
+        self.conv22 = nn.Conv3d(32, 32, 3, padding=1)
+        self.conv3 = nn.Conv3d(32, 32, 3, padding=1)
+
+        # Obelisk Encoder
+        # sample_grid: 1 x    1     x #samples x 1 x 3
+        # offsets:     1 x #offsets x     1    x 1 x 3
+        self.sample_grid1 = torch.cat((torch.linspace(-1, 1, W_grid2).view(1, 1, -1, 1).repeat(D_grid2, H_grid2, 1, 1),
+                                       torch.linspace(-1, 1, H_grid2).view(1, -1, 1, 1).repeat(D_grid2, 1, W_grid2, 1),
+                                       torch.linspace(-1, 1, D_grid2).view(-1, 1, 1, 1).repeat(1, H_grid2, W_grid2, 1)),
+                                      dim=3).view(1, 1, -1, 1, 3).detach()
+        self.sample_grid1.requires_grad = False
+        self.sample_grid2 = torch.cat((torch.linspace(-1, 1, W_grid3).view(1, 1, -1, 1).repeat(D_grid3, H_grid3, 1, 1),
+                                       torch.linspace(-1, 1, H_grid3).view(1, -1, 1, 1).repeat(D_grid3, 1, W_grid3, 1),
+                                       torch.linspace(-1, 1, D_grid3).view(-1, 1, 1, 1).repeat(1, H_grid3, W_grid3, 1)),
+                                      dim=3).view(1, 1, -1, 1, 3).detach()
+        self.sample_grid2.requires_grad = False
+        self.offset1 = nn.Parameter(torch.randn(1, 128, 1, 1, 3) * 0.05)
+        self.linear1a = nn.Conv3d(256, 128, 1, groups=2, bias=False)
+        self.linear1b = nn.Conv3d(128, 32, 1, bias=False)
+        self.linear1c = nn.Conv3d(128 + 32, 32, 1, bias=False)
+        self.linear1d = nn.Conv3d(128 + 64, 32, 1, bias=False)
+        self.linear1e = nn.Conv3d(128 + 96, 16, 1, bias=False)
+
+        self.offset2 = nn.Parameter(torch.randn(1, 512, 1, 1, 3) * 0.05)
+        self.linear2a = nn.Conv3d(1024, 128, 1, groups=4, bias=False)
+        self.linear2b = nn.Conv3d(128, 32, 1, bias=False)
+        self.linear2c = nn.Conv3d(128 + 32, 32, 1, bias=False)
+        self.linear2d = nn.Conv3d(128 + 64, 32, 1, bias=False)
+        self.linear2e = nn.Conv3d(128 + 96, 32, 1, bias=False)
+
+        # U-Net Decoder
+        self.conv6bU = nn.Conv3d(64, 32, 3, padding=1)  # 96#64#32
+        self.conv6U = nn.Conv3d(64, 12, 3, padding=1)  # 64#48
+        self.conv7U = nn.Conv3d(16, 16, 3, padding=1)  # 24#16#24
+
+        # for registration, output flow feature get shape: [N, D, W, H, 3]
+        self.flow = nn.Conv3d(16, 3, 3, padding=1)
+        # Make flow weights + bias small. Not sure this is necessary.
+        nd = Normal(0, 1e-5)
+        self.flow.weight = nn.Parameter(nd.sample(self.flow.weight.shape))
+        self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
+
+    def forward(self, src, tgt):
+        x = torch.cat([src, tgt], dim=1)
+        # Get encoder activations
+        B, C, D, H, W = x.size()
+        device = x.device
+
+        leakage = 0.025
+        x0 = F.avg_pool3d(x, 3, padding=1, stride=1)
+        x00 = F.avg_pool3d(F.avg_pool3d(x, 3, padding=1, stride=1), 3, padding=1, stride=1)
+
+        x1 = F.leaky_relu(self.conv0(x), leakage)
+        x = F.leaky_relu(self.conv1(x1), leakage)
+        x2 = F.leaky_relu(self.conv11(x), leakage)
+        x = F.leaky_relu(self.conv2(x2), leakage)
+        x = F.leaky_relu(self.conv22(x), leakage)
+
+        x = F.leaky_relu(self.conv3(x), leakage)
+
+        x_o1 = F.grid_sample(x0, (self.sample_grid1.to(device).repeat(B, 1, 1, 1, 1) + self.offset1)) \
+            .view(B, -1, self.D_grid2, self.H_grid2, self.W_grid2)
+
+        x_o1 = F.leaky_relu(self.linear1a(x_o1), leakage)
+        x_o1a = torch.cat((x_o1, F.leaky_relu(self.linear1b(x_o1), leakage)), dim=1)
+        x_o1b = torch.cat((x_o1a, F.leaky_relu(self.linear1c(x_o1a), leakage)), dim=1)
+        x_o1c = torch.cat((x_o1b, F.leaky_relu(self.linear1d(x_o1b), leakage)), dim=1)
+        x_o1d = F.leaky_relu(self.linear1e(x_o1c), leakage)
+        x_o1 = F.interpolate(x_o1d, size=[self.D_grid1, self.H_grid1, self.W_grid1], mode='trilinear',
+                             align_corners=False)
+
+        x_o2 = F.grid_sample(x00, (self.sample_grid2.to(device).repeat(B, 1, 1, 1, 1) + self.offset2)) \
+            .view(B, -1, self.D_grid3, self.H_grid3, self.W_grid3)
+
+        x_o2 = F.leaky_relu(self.linear2a(x_o2), leakage)
+        x_o2a = torch.cat((x_o2, F.leaky_relu(self.linear2b(x_o2), leakage)), dim=1)
+        x_o2b = torch.cat((x_o2a, F.leaky_relu(self.linear2c(x_o2a), leakage)), dim=1)
+        x_o2c = torch.cat((x_o2b, F.leaky_relu(self.linear2d(x_o2b), leakage)), dim=1)
+        x_o2d = F.leaky_relu(self.linear2e(x_o2c), leakage)
+        x_o2 = F.interpolate(x_o2d, size=[self.D_grid2, self.H_grid2, self.W_grid2], mode='trilinear',
+                             align_corners=False)
+
+        x = F.leaky_relu(self.conv6bU(torch.cat((x, x_o2), 1)), leakage)
+        x = F.interpolate(x, size=[self.D_grid1, self.H_grid1, self.W_grid1], mode='trilinear', align_corners=False)
+        x = F.leaky_relu(self.conv6U(torch.cat((x, x_o1, x2), 1)), leakage)
+        x = F.interpolate(x, size=[D, H, W], mode='trilinear', align_corners=False)
+        x = F.leaky_relu(self.conv7U(torch.cat((x, x1), 1)), leakage)
+        x = self.flow(x)
+
+        return x
+
+
 if __name__ == "__main__":
     from torchsummary import summary
 
@@ -314,6 +438,6 @@ if __name__ == "__main__":
     # seg_net.cuda()
     # summary(model=seg_net, input_size=(1, 192, 160, 192), batch_size=1)
 
-    reg_net = Reg_Obelisk_Unet(num_labels=5, full_res=full_res)
+    reg_net = Reg_Obelisk_Unet(full_res=full_res)
     reg_net.cuda()
     summary(model=reg_net, input_size=[(1, 192, 160, 192), (1, 192, 160, 192)])

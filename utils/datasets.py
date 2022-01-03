@@ -7,6 +7,12 @@ from torch.utils.data import Dataset, DataLoader
 from utils import ImgTransform
 
 
+class CT2MRDataset(Dataset):
+    def __init__(self):
+        super(CT2MRDataset, self).__init__()
+
+
+
 class LPBADataset(Dataset):
     def __init__(self,
                  image_folder,
@@ -29,8 +35,15 @@ class LPBADataset(Dataset):
         return min(len(self.img_paths), len(self.label_paths))
 
     def __getitem__(self, index):
-        img_arr = nib.load(self.img_paths[index]).get_fdata()[np.newaxis, ...].astype(np.float32)
-        label_arr = nib.load(self.label_paths[index]).get_fdata().astype(np.float32)
+        # 用 nibabel 读取的图像会被旋转，需要得到原图的 affine 才能还原，很迷。但是在 inference 的时候保存的图像又是正常的，不不知为何。
+        # 可能是原本网络的输出就是旋转过后的，再次用 nibabel 保存之后又转回来了？
+        img_path = self.img_paths[index]
+        label_path = self.label_paths[index]
+        img_arr = sitk.GetArrayFromImage(sitk.ReadImage(img_path))[np.newaxis, ...].astype(np.float32)
+        label_arr = sitk.GetArrayFromImage(sitk.ReadImage(label_path)).astype(np.float32)
+        # 这两个标签没有对应的结构
+        label_arr[label_arr == 181.] = 0.
+        label_arr[label_arr == 182.] = 0.
         return img_arr, label_arr
 
     def get_labels_num(self):

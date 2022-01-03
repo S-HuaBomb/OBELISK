@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 import time
 import os
+import pathlib
 import sys
 import nibabel as nib
 import scipy.io
@@ -49,7 +50,7 @@ def main():
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
                         default="seg?_chaos_MR.nii.gz")
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
-                        default="output/reg_preds/pred?_chaos_MR.nii.gz")
+                        default="output/reg_preds/LPBA40/")
 
     options = parser.parse_args()
     d_options = vars(options)
@@ -57,6 +58,10 @@ def main():
     label_folder = d_options['groundtruth']
     img_name = d_options['img_name']
     label_name = d_options['label_name']
+
+    if not os.path.exists(d_options['output']):
+        # os.makedirs(out_dir, exist_ok=True)
+        pathlib.Path(d_options['output']).mkdir(parents=True, exist_ok=True)
 
     # load atlas
     atlas_dataset = MyDataset(image_folder=img_folder,
@@ -113,7 +118,7 @@ def main():
             # if d_options['dataset'] == 'visceral':
             #     predict = F.interpolate(predict, size=[D_in0, H_in0, W_in0], mode='trilinear', align_corners=False)
 
-        save_path = d_options['output']
+        save_path = os.path.join(d_options['output'], 'pred?_lpba.nii.gz')
 
         nib.save(nib.Nifti1Image(pred_img.squeeze().numpy(), np.eye(4)),
                  save_path.replace("?", f"{save_name}_warped"))

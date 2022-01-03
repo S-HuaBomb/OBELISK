@@ -9,21 +9,16 @@ from torch.utils.data import DataLoader
 
 import time
 import os
-import pathlib
-import sys
-import nibabel as nib
-import scipy.io
 import sys
 import visdom
 
 import argparse
 
-from utils.utils import init_weights, countParam, dice_coeff, \
-    get_cosine_schedule_with_warmup, get_logger, ImgTransform
+from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
-from utils.datasets import MyDataset
+from utils.datasets import MyDataset, LPBADataset
 from utils.losses import OHEMLoss, multi_class_dice_loss, MIND_SSC_loss, gradient_loss
-from models import Reg_Obelisk_Unet, SpatialTransformer
+from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
 
 
 def split_at(s, c, n):
@@ -35,16 +30,15 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='bcv', required=False)
+    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='lpba40', required=False)
     parser.add_argument("-img_folder", dest="img_folder", help="training CTs dataset folder",
-                        default='preprocess/datasets/MICCAI2021_masked/L2R_Task1_MR/MRIs')
+                        default=r'E:\src_code\shb\VM_torch\dataset\LPBA40\train')
     parser.add_argument("-label_folder", dest="label_folder", help="training labels dataset folder",
-                        default='preprocess/datasets/MICCAI2021_masked/L2R_Task1_MR/Labels')
+                        default=r"E:\src_code\shb\VM_torch\dataset\LPBA40\label")
     parser.add_argument("-scannumbers", dest="scannumbers",
                         help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
-                        default="2 4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 28 29 "
-                                "30 31 32 34 35 36 37 38 39",
-                        # chaos_MR:
+                        default="11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40",
+                        # chaos_MR: 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29
                         # "2 4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 28 29 "
                         # "30 31 32 34 35 36 37 38 39"
                         # bcv_CT:
@@ -53,23 +47,21 @@ def main():
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",
-                        default='img?_chaos_MR.nii.gz')  # pancreas_ct?.nii.gz
+                        default='S?.delineation.skullstripped.nii.gz')  # pancreas_ct?.nii.gz
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="seg?_chaos_MR.nii.gz")
+                        default="S?.delineation.structure.label.nii.gz")
     parser.add_argument("-atlas_file", dest="atlas_file", help="atlas for registration i.e. img26_bcv_CT.nii.gz",
                         default="img26_chaos_MR.nii.gz")
     parser.add_argument("-output", dest="output", help="filename (without extension) for output",
-                        default="output/obeliskhybrid_chaos_reg/")
+                        default="output/LPBA40_noBN_/")
 
     # training args
-    parser.add_argument("-num_workers", dest="num_workers", help="Dataloader num_workers",
-                        type=int, default=2)
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
-                        type=int, default=2)
+                        type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
-                        type=float, default=0.005)  # 0.005
+                        type=float, default=4e-4)  # 0.005
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
-                        dest="alpha", default=2.0)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
+                        dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
@@ -78,7 +70,8 @@ def main():
                         type=float, default=1.0)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
                         type=int, default=500)
-    parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training", default=None)
+    parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training",
+                        default=None)  # "output/LPBA40_noBN/lpba40_best63.pth"
     parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=5)
     parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
                         type=bool, default=False)
@@ -91,11 +84,9 @@ def main():
     is_visdom = d_options["visdom"]
 
     if not os.path.exists(d_options['output']):
-        # os.makedirs(out_dir, exist_ok=True)
-        pathlib.Path(d_options['output']).mkdir(parents=True, exist_ok=True)
+        os.mkdir(d_options['output'])
 
     logger = get_logger(d_options['output'])
-    # sys.stdout = Logger(d_options['output'] + 'log.txt')
     logger.info(f"output to {d_options['output']}")
 
     # load train images and segmentations
@@ -109,82 +100,69 @@ def main():
     img_name = d_options['img_name']
     label_name = d_options['label_name']
 
-    train_dataset = MyDataset(image_folder=img_folder,
+    train_dataset = LPBADataset(image_folder=img_folder,
+                                image_name=img_name,
+                                label_folder=label_folder,
+                                label_name=label_name,
+                                scannumbers=scannumbers)
+
+    val_dataset = LPBADataset(image_folder=img_folder,
                               image_name=img_name,
                               label_folder=label_folder,
                               label_name=label_name,
-                              scannumbers=scannumbers,
-                              img_transform=ImgTransform(scale_type="max-min"))
+                              scannumbers=[2, 3, 4, 5, 6, 7, 8, 9, 10])
 
-    val_dataset = MyDataset(image_folder=img_folder,
-                            image_name=img_name,
-                            label_folder=label_folder,
-                            label_name=label_name,
-                            scannumbers=[1, 3, 5, 6, 30],
-                            img_transform=ImgTransform(scale_type="max-min"))
-
-    atlas_dataset = MyDataset(image_folder=img_folder,
+    fix_dataset = LPBADataset(image_folder=img_folder,
                               image_name=img_name,
                               label_folder=label_folder,
                               label_name=label_name,
-                              scannumbers=[26],
-                              img_transform=ImgTransform(scale_type="max-min"))
-    atlas_loader = DataLoader(dataset=atlas_dataset)
+                              scannumbers=[1])
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'],
-                              shuffle=True,
-                              num_workers=args.num_workers)
+    fix_loader = DataLoader(dataset=fix_dataset)
+    train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=1)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1)
 
     end_epoch = d_options['epochs']  # 300
 
-    class_weight = train_dataset.get_class_weight()
-    class_weight = class_weight / class_weight.mean()
-    class_weight[0] = 0.5
-    np.set_printoptions(formatter={'float': '{: 0.2f}'.format})
-    logger.info(f'inv sqrt class_weight: {class_weight.data.cpu().numpy()}')
-    # [ 0.50  0.59  1.13  0.73  1.96  2.80  0.24  0.46  1.00]
-
-    # criterion = nn.CrossEntropyLoss()#
-    ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
-
-    num_labels = int(class_weight.numel())
+    num_labels = train_dataset.get_labels_num()
     logger.info(f"num of labels: {num_labels}")
 
     if d_options['dataset'] == 'tcia':
         full_res = [144, 144, 144]
     elif d_options['dataset'] == 'bcv':
         full_res = [192, 160, 192]  # full resolution
-    reg_net = Reg_Obelisk_Unet(full_res, for_reg=True)
-    STN_train = SpatialTransformer(full_res)
-    STN_val = SpatialTransformer(full_res, mode="nearest")  # for label aligned validation
+    elif d_options['dataset'] == 'lpba40':
+        full_res = [160, 192, 160]  # full resolution
+    reg_net = Reg_Obelisk_Unet_noBN(full_res)
+    STN_train = SpatialTransformer(full_res)  # STN training for image align
+    STN_val = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
     reg_net.cuda()
     STN_train.cuda().train()
-    STN_val.cuda().eval()  # just for val
+    STN_val.cuda().eval()  # just for validation
 
-    # STN_train has no trainable parameters
+    # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.00001)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
-    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
-    # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-    #                                             warmup_steps=d_options["warmup_steps"],
-    #                                             total_steps=end_epoch,)
+    # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
+    scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+                                                warmup_steps=d_options["warmup_steps"],
+                                                total_steps=end_epoch,)
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
         reg_net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
-        scheduler.load_state_dict(obelisk["scheduler"])
+        # scheduler.load_state_dict(obelisk["scheduler"])
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         logger.info(f"Training resume from {d_options['resume']}")
     else:
         best_acc = 0
-        star_epoch = 0
+        star_epoch = 1
         reg_net.apply(init_weights)
 
     logger.info(f'obelisk params: {countParam(reg_net)}')  # obelisk params 252509
-    logger.info(f'STN params: {countParam(STN_train)}')  # obelisk params 252509
+    logger.info(f"STN params: {countParam(STN_train)}")  # STN params: 0
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
     run_loss = np.zeros([end_epoch, 3])
@@ -208,14 +186,17 @@ def main():
         best_acc_opt = {'xlabel': 'epochs', 'ylabel': 'best acc', 'title': 'Best Acc Line'}
 
     batch_size = d_options['batch_size']
-    atlas_loader = iter(atlas_loader)
-    fixed_img, fixed_label = next(atlas_loader)
-    fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])  # fit batch size
+    fixed_loader = iter(fix_loader)
+    fixed_img, fixed_label = next(fixed_loader)
+    fixed_img = fixed_img.expand(batch_size, *fixed_img.shape[1:])
     fixed_label = fixed_label.expand(batch_size, *fixed_label.shape[1:])
     fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()
 
+    # mse_loss = torch.nn.MSELoss()
+    # ohem_criterion = OHEMLoss(0.25, class_weight.cuda())  # Online Hard Example Mining Loss ~= Soft CELoss
+
     # for loop over iterations and epochs
-    for epoch in range(star_epoch, end_epoch):
+    for epoch in range(star_epoch, end_epoch + 1):
         reg_net.train()
 
         run_loss[epoch] = 0.0
@@ -230,7 +211,7 @@ def main():
                     # [B, C, D, W, H]
                     torch.cuda.empty_cache()
             else:
-                moving_img, moving_label = imgs.cuda(), segs.cuda()
+                moving_img, moving_label = imgs.cuda(), segs.float().cuda()
 
             optimizer.zero_grad()
 
@@ -239,6 +220,12 @@ def main():
             m2f = STN_train(moving_img, flow_m2f)
 
             # Calculate loss
+            if epoch * len(train_loader) <= 100:
+                # grad loss weight warmup to stabilise the training
+                args.alpha = 0.15
+            else:
+                args.alpha = 0.025
+
             sim_loss = MIND_SSC_loss(m2f, fixed_img)
             grad_loss = gradient_loss(flow_m2f)
             total_loss = args.mind_weight * sim_loss + args.alpha * grad_loss
@@ -257,7 +244,7 @@ def main():
             del moving_label
             torch.cuda.empty_cache()
 
-        scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
+        scheduler.step()  # epoch wise lr decay  run_loss[epoch, 0]
 
         # evaluation on training images
         t1 = time.time() - t0
@@ -267,7 +254,7 @@ def main():
 
             for val_idx, (imgs, segs) in enumerate(val_loader):
                 moving_img = imgs.cuda()
-                moving_label = segs.unsqueeze(1).float().cuda()
+                moving_label = segs.unsqueeze(1).float().cuda()  # [B, C, D, W, H]
                 t0 = time.time()
 
                 with torch.no_grad():
@@ -275,7 +262,7 @@ def main():
                     m2f_label = STN_val(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label.cpu(), num_labels)
+                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label.long().cpu(), num_labels)
                 dice_all_val[val_idx] = dice_one_val
                 del flow_m2f
                 del m2f_label
@@ -300,12 +287,12 @@ def main():
 
             if is_visdom:
                 # loss line
-                vis.line(Y=[run_loss[epoch]], X=[epoch], win='loss-', update='append', opts=loss_opts)
+                vis.line(Y=[run_loss[epoch]], X=[epoch], win='loss+', update='append', opts=loss_opts)
                 # acc line
-                vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc-', update='append', opts=acc_opts)
-                vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+                # vis.line(Y=[all_val_dice_avgs], X=[epoch], win='acc+', update='append', opts=acc_opts)
+                vis.line(Y=[mean_all_dice], X=[epoch], win='best_acc+', update='append', opts=best_acc_opt)
                 # lr decay line
-                vis.line(Y=[latest_lr], X=[epoch], win='lr-', update='append', opts=lr_opts)
+                vis.line(Y=[latest_lr], X=[epoch], win='lr+', update='append', opts=lr_opts)
 
             reg_net.cpu()
 
@@ -323,7 +310,7 @@ def main():
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
                 # if is_visdom:
-                #     vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+                #     vis.line(Y=[best_acc], X=[epoch], win='best_acc', update='append', opts=best_acc_opt)
 
             reg_net.cuda()
 
