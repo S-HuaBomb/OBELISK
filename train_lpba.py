@@ -142,7 +142,7 @@ def main():
     STN_val.cuda().eval()  # just for validation
 
     # STN has no trainable parameters
-    optimizer = optim.AdamW(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.01)
+    optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'], weight_decay=0.00001)
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
     # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
