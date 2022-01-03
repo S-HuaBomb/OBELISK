@@ -290,7 +290,7 @@ def main():
             logger.info(
                 f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch, 0] :.3f}, "
                 f"stddev {torch.std(reg_net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
-                f"stdJac {np.mean(Jac_std)} %Jac<0 {np.mean(Jac_neg)} best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
+                f"stdJac {np.mean(Jac_std) :.3f} %Jac<0 {np.mean(Jac_neg) :.3f} best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
 
             if is_visdom:
                 # loss line
