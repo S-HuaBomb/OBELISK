@@ -31,6 +31,7 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
+    # dataset args
     parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='lpba40', required=False)
     parser.add_argument("-img_folder", dest="img_folder", help="training CTs dataset folder",
                         default=r'E:\src_code\shb\VM_torch\dataset\LPBA40\train')
@@ -61,14 +62,8 @@ def main():
                         type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=0.005)  # 0.005 for AdamW, 4e-4 for Adam
-    parser.add_argument("-alpha", type=float, help="weight for regularization loss",
-                        dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
-    parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
-                        type=float, default=1.0)
-    parser.add_argument("-mind_weight", dest="mind_weight", help="OHEM loss weight",
-                        type=float, default=1.0)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
                         type=int, default=500)
     parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training",
@@ -76,6 +71,16 @@ def main():
     parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=5)
     parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
                         type=bool, default=False)
+
+    # losses args
+    parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE'],
+                        dest="sim_loss", default='MIND')
+    parser.add_argument("-alpha", type=float, help="weight for regularization loss",
+                        dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
+    parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
+                        type=float, default=1.0)
+    parser.add_argument("-sim_weight", dest="sim_weight", help="OHEM loss weight",
+                        type=float, default=1.0)
 
     # parser.add_argument("-groundtruth", dest="groundtruth",  help="nii.gz groundtruth segmentation", default=None,
     # required=False)
@@ -148,6 +153,10 @@ def main():
     scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
                                                 warmup_steps=d_options["warmup_steps"],
                                                 total_steps=end_epoch,)
+    # losses
+    sim_criterion = MIND_SSC_loss if args.sim_loss == "MIND" else nn.MSELoss()
+    grad_criterion = gradient_loss
+    dice_criterion = multi_class_dice_loss
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
@@ -224,19 +233,19 @@ def main():
             # Calculate loss
             if epoch * len(train_loader) <= 100:
                 # grad loss weight warmup to stabilise the training
-                args.alpha = 0.15
+                alpha = args.alpha * 5
             else:
-                args.alpha = 0.025
+                alpha = args.alpha
 
-            sim_loss = MIND_SSC_loss(m2f, fixed_img)
-            grad_loss = gradient_loss(flow_m2f)
-            total_loss = args.mind_weight * sim_loss + args.alpha * grad_loss
+            sim_loss = sim_criterion(m2f, fixed_img)
+            grad_loss = grad_criterion(flow_m2f)
+            total_loss = args.sim_weight * sim_loss + alpha * grad_loss
 
             total_loss.backward()
 
             run_loss[epoch, 0] += total_loss.item()
-            run_loss[epoch, 1] += args.mind_weight * sim_loss.item()
-            run_loss[epoch, 2] += args.alpha * grad_loss.item()
+            run_loss[epoch, 1] += args.sim_weight * sim_loss.item()
+            run_loss[epoch, 2] += alpha * grad_loss.item()
 
             optimizer.step()
             del total_loss

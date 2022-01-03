@@ -1,4 +1,5 @@
 import numpy as np
+import SimpleITK as sitk
 import scipy.ndimage as ndimage
 import torch
 import torch.nn.functional as F
@@ -44,7 +45,7 @@ class RandomRotation:
         return img_numpy, label
 
 
-def augmentAffine(img_in, seg_in, strength=0.05):
+def augmentAffine(img_in, seg_in, strength=2.5):
     """
     3D affine augmentation on image and segmentation mini-batch on GPU.
     (affine transf. is centered: trilinear interpolation and zero-padding used for sampling)
@@ -84,17 +85,23 @@ def augmentAffine(img_in, seg_in, strength=0.05):
 if __name__ == "__main__":
     import nibabel as nib
     from torch.utils.data import DataLoader
-    from preprocess.which_scale_to_apply import MyDataset
+    from preprocess.which_scale_to_apply import MyDataset, LPBADataset
 
-    my_dataset = MyDataset(image_folder="../preprocess/datasets/process_cts/",
-                           image_name="pancreas_ct?.nii.gz",
-                           label_folder="../preprocess/datasets/process_labels",
-                           label_name="label_ct?.nii.gz",
-                           scannumbers=[11, 12, 13])
+    # my_dataset = MyDataset(image_folder="../preprocess/datasets/process_cts/",
+    #                        image_name="pancreas_ct?.nii.gz",
+    #                        label_folder="../preprocess/datasets/process_labels",
+    #                        label_name="label_ct?.nii.gz",
+    #                        scannumbers=[11, 12, 13])
+    my_dataset = LPBADataset(
+        image_folder=r"D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\train",
+        image_name="S?.delineation.skullstripped.nii.gz",
+        label_folder=r"D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\label",
+        label_name="S?.delineation.structure.label.nii.gz",
+        scannumbers=[11, 12, 13, 14]
+    )
     my_dataloader = DataLoader(dataset=my_dataset, batch_size=1)
     print(f"len dataset: {len(my_dataset)}, len dataloader: {len(my_dataloader)}")
-    imgs, segs, affine = next(iter(my_dataloader))
-    print(f"imgs affine: {affine[0].shape}, segs affine: {affine[1].shape}")  # torch.Size([1, 4, 4])
+    imgs, segs = next(iter(my_dataloader))
     print(f"imgs size: {imgs.size()}, segs size: {segs.size()}")
     print(f"min, max in imgs: {torch.min(imgs), torch.max(imgs)}")
     print(f"mean, std in imgs: {imgs.mean(), imgs.std()}")
@@ -103,7 +110,9 @@ if __name__ == "__main__":
 
     img_np = imgs.squeeze().squeeze().numpy()
     seg_np = segs.squeeze().numpy()
-    img_nib = nib.Nifti1Image(img_np, affine=affine[0].squeeze().numpy())
-    seg_nib = nib.Nifti1Image(seg_np, affine=affine[1].squeeze().numpy())
-    nib.save(img_nib, 'pancreas_ct11_01.nii.gz')
-    nib.save(seg_nib, 'label_ct11_01.nii.gz')
+    sitk.WriteImage(sitk.GetImageFromArray(img_np), "img_lpba.nii.gz")
+    sitk.WriteImage(sitk.GetImageFromArray(seg_np.astype(np.uint8)), "seg_lpba.nii.gz")
+    # img_nib = nib.Nifti1Image(img_np, affine=affine[0].squeeze().numpy())
+    # seg_nib = nib.Nifti1Image(seg_np, affine=affine[1].squeeze().numpy())
+    # nib.save(img_nib, 'pancreas_ct11_01.nii.gz')
+    # nib.save(seg_nib, 'label_ct11_01.nii.gz')

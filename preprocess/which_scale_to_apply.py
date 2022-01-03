@@ -1,9 +1,50 @@
 import os
 import numpy as np
+import SimpleITK as sitk
 import nibabel as nib
 
 import torch
 from torch.utils.data import Dataset, DataLoader
+
+
+class LPBADataset(Dataset):
+    def __init__(self,
+                 image_folder,
+                 image_name,
+                 label_folder,
+                 label_name,
+                 scannumbers):
+
+        if image_name.find("?") == -1 or label_name.find("?") == -1:
+            raise ValueError('error! filename must contain \"?\" to insert your chosen numbers')
+
+        self.img_paths = []
+        self.label_paths = []
+
+        for i in scannumbers:
+            self.img_paths.append(os.path.join(image_folder, image_name.replace("?", str(i))))
+            self.label_paths.append(os.path.join(label_folder, label_name.replace("?", str(i))))
+
+    def __len__(self):
+        return min(len(self.img_paths), len(self.label_paths))
+
+    def __getitem__(self, index):
+        # 用 nibabel 读取的图像会被旋转，需要得到原图的 affine 才能还原，很迷。但是在 inference 的时候保存的图像又是正常的，不不知为何。
+        # 可能是原本网络的输出就是旋转过后的，再次用 nibabel 保存之后又转回来了？
+        img_path = self.img_paths[index]
+        label_path = self.label_paths[index]
+        img_arr = sitk.GetArrayFromImage(sitk.ReadImage(img_path))[np.newaxis, ...].astype(np.float32)
+        label_arr = sitk.GetArrayFromImage(sitk.ReadImage(label_path)).astype(np.float32)
+        # 这两个标签没有对应的结构
+        label_arr[label_arr == 181.] = 0.
+        label_arr[label_arr == 182.] = 0.
+        return img_arr, label_arr
+
+    def get_labels_num(self):
+        a_label = nib.load(self.label_paths[0]).get_fdata()
+        a_label[a_label == 181.] = 0.
+        a_label[a_label == 182.] = 0.
+        return int(len(np.unique(a_label)))
 
 
 class MyDataset(Dataset):
