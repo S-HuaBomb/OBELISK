@@ -99,6 +99,8 @@ def main():
         os.mkdir(d_options['output'])
 
     logger = get_logger(d_options['output'])
+    if args.weakly_sup:
+        logger.info("Weakly supervised training with dice loss")
     logger.info(f"output to {d_options['output']}")
 
     # load train images and segmentations
@@ -148,8 +150,10 @@ def main():
 
     if args.with_BN:
         reg_net = Reg_Obelisk_Unet(full_res)
+        logger.info(f"Training by Reg_Obelisk_Unet with BN")
     else:
         reg_net = Reg_Obelisk_Unet_noBN(full_res)
+        logger.info(f"Training by Reg_Obelisk_Unet_noBN without BN")
     STN_train = SpatialTransformer(full_res)  # STN training for image align
     STN_label = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
     reg_net.cuda()
