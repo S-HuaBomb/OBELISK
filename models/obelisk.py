@@ -163,9 +163,8 @@ class Obelisk_Unet(nn.Module):
 
 
 class Reg_Obelisk_Unet(nn.Module):
-    def __init__(self, full_res, for_reg=True):
+    def __init__(self, full_res):
         super(Reg_Obelisk_Unet, self).__init__()
-        self.for_reg = for_reg
         D_in2 = full_res[0]  # 192 160
         H_in2 = full_res[1]  # 160 192
         W_in2 = full_res[2]  # 192 160
@@ -246,13 +245,13 @@ class Reg_Obelisk_Unet(nn.Module):
         self.batch6U = nn.BatchNorm3d(12)
         self.conv7U = nn.Conv3d(16, 16, 3, padding=1)  # 24#16#24
         self.batch7U = nn.BatchNorm3d(16)
-        if self.for_reg:
-            # for registration, output flow feature get shape: [N, D, W, H, 3]
-            self.flow = nn.Conv3d(16, 3, 3, padding=1)
-            # Make flow weights + bias small. Not sure this is necessary.
-            # nd = Normal(0, 1e-5)
-            # self.flow.weight = nn.Parameter(nd.sample(self.flow.weight.shape))
-            # self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
+
+        # for registration, output flow feature get shape: [N, D, W, H, 3]
+        self.flow = nn.Conv3d(16, 3, 3, padding=1)
+        # Make flow weights + bias small. Not sure this is necessary.
+        nd = Normal(0, 1e-5)
+        self.flow.weight = nn.Parameter(nd.sample(self.flow.weight.shape))
+        self.flow.bias = nn.Parameter(torch.zeros(self.flow.bias.shape))
 
     def forward(self, src, tgt):
         x = torch.cat([src, tgt], dim=1)
@@ -300,8 +299,7 @@ class Reg_Obelisk_Unet(nn.Module):
         x = F.interpolate(x, size=[D, H, W], mode='trilinear', align_corners=False)
         x = F.leaky_relu(self.batch7U(self.conv7U(torch.cat((x, x1), 1))), leakage)
 
-        if self.for_reg:
-            x = self.flow(x)
+        x = self.flow(x)
 
         return x
 
@@ -425,6 +423,7 @@ class Reg_Obelisk_Unet_noBN(nn.Module):
         x = F.leaky_relu(self.conv6U(torch.cat((x, x_o1, x2), 1)), leakage)
         x = F.interpolate(x, size=[D, H, W], mode='trilinear', align_corners=False)
         x = F.leaky_relu(self.conv7U(torch.cat((x, x1), 1)), leakage)
+
         x = self.flow(x)
 
         return x

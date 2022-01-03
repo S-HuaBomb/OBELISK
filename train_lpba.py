@@ -58,6 +58,8 @@ def main():
                         default="output/LPBA40_noBN_/")
 
     # training args
+    parser.add_argument("-with_BN", dest="with_BN", help="OBELISK Reg_Net with BN or not",
+                        type=bool, default=False)
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
@@ -143,7 +145,11 @@ def main():
         full_res = [192, 160, 192]  # full resolution
     elif d_options['dataset'] == 'lpba40':
         full_res = [160, 192, 160]  # full resolution
-    reg_net = Reg_Obelisk_Unet_noBN(full_res)
+
+    if args.with_BN:
+        reg_net = Reg_Obelisk_Unet(full_res)
+    else:
+        reg_net = Reg_Obelisk_Unet_noBN(full_res)
     STN_train = SpatialTransformer(full_res)  # STN training for image align
     STN_label = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
     reg_net.cuda()
@@ -174,7 +180,7 @@ def main():
         obelisk = torch.load(d_options['resume'])
         reg_net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
-        scheduler.load_state_dict(obelisk["scheduler"])
+        scheduler.load_state_dict(obelisk["scheduler"]) if args.apply_lr_scheduler else None
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         logger.info(f"Training resume from {d_options['resume']}")
@@ -264,7 +270,7 @@ def main():
 
             optimizer.step()
             del total_loss
-            del flow_m2f, m2f_img
+            del flow_m2f, m2f_img, m2f_label
             torch.cuda.empty_cache()
             del moving_img
             del moving_label
