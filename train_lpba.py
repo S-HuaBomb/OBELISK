@@ -75,6 +75,8 @@ def main():
                         type=bool, default=False)
 
     # losses args
+    parser.add_argument("-weakly_sup", type=bool, help="if apply weakly supervised, use reg dice loss, else not",
+                        dest="weakly_sup", default=False)
     parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE', 'NCC'],
                         dest="sim_loss", default='NCC')
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
@@ -195,7 +197,7 @@ def main():
         loss_opts = {'xlabel': 'epochs',
                      'ylabel': 'loss',
                      'title': 'Loss Line',
-                     'legend': ['total loss', 'mind loss', 'grad loss']}
+                     'legend': ['total loss', 'sim loss', 'dice loss', 'grad loss']}
         acc_opts = {'xlabel': 'epochs',
                     'ylabel': 'acc',
                     'title': 'Acc Line',
@@ -250,7 +252,7 @@ def main():
 
             sim_loss = sim_criterion(m2f_img, fixed_img)
             grad_loss = grad_criterion(flow_m2f)
-            dice_loss_ = dice_criterion(m2f_label, fixed_label)
+            dice_loss_ = dice_criterion(m2f_label, fixed_label) if args.weakly_sup else 0.
             total_loss = args.sim_weight * sim_loss + args.dice_weight * dice_loss_ + alpha * grad_loss
 
             total_loss.backward()
@@ -311,8 +313,10 @@ def main():
 
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
             logger.info(
-                f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, loss {run_loss[epoch, 0] :.3f}, "
-                f"stddev {torch.std(reg_net.offset1.data) :.3f}, dice_avgs {all_val_dice_avgs}, avgs {mean_all_dice :.3f}, "
+                f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, "
+                f"total loss {run_loss[epoch, 0] :.3f}, sim loss {run_loss[epoch, 1] :.3f}, "
+                f"dice loss {run_loss[epoch, 2] :.3f}, grad loss {run_loss[epoch, 3] :.3f}, "
+                f"stddev {torch.std(reg_net.offset1.data) :.3f}, dice avgs {mean_all_dice :.3f}, "
                 f"stdJac {np.mean(Jac_std) :.3f}, Jac<=0 {np.mean(Jac_neg) :.3f}%, "
                 f"best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
 
