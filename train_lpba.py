@@ -326,9 +326,9 @@ def main():
                 f"epoch {epoch}, time train {round(t1, 3)}, time infer {round(time_i, 3)}, "
                 f"total loss {run_loss[epoch, 0] :.3f}, sim loss {run_loss[epoch, 1] :.3f}, "
                 f"dice loss {run_loss[epoch, 2] :.3f}, grad loss {run_loss[epoch, 3] :.3f}, "
-                f"stddev {torch.std(reg_net.offset1.data) :.3f}, dice avgs {mean_all_dice :.3f}, "
+                f"stddev {torch.std(reg_net.offset1.data) :.3f}, "
                 f"stdJac {np.mean(Jac_std) :.3f}, Jac<=0 {np.mean(Jac_neg) :.3f}%, "
-                f"best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
+                f"dice avgs {mean_all_dice :.3f}, best_acc {best_acc :.3f}, lr {latest_lr :.8f}")
 
             if is_visdom:
                 # loss line

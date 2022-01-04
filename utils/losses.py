@@ -45,7 +45,7 @@ def dice_loss(output, target):
     ndims = len(list(output.size())) - 2
     vol_axes = list(range(2, ndims+2))
     top = 2 * (target * output).sum(dim=vol_axes)
-    bottom = torch.clamp((target + output).sum(dim=vol_axes), min=1e-5)
+    bottom = torch.clamp((target * target + output * output).sum(dim=vol_axes), min=1e-5)
     dice = torch.mean(top / bottom)
     return 1. - dice
 
