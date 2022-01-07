@@ -58,14 +58,12 @@ def main():
                         default="output/LPBA40_noBN_/")
 
     # training args
-    parser.add_argument("-with_BN", dest="with_BN", help="OBELISK Reg_Net with BN or not",
-                        type=bool, default=False)
+    parser.add_argument("-with_BN", help="OBELISK Reg_Net with BN or not", action="store_true")
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=1)
     parser.add_argument("-reg_learning_rate", dest="reg_lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=4e-4)  # 0.005 for AdamW, 4e-4 for Adam
-    parser.add_argument("-apply_lr_scheduler", dest="apply_lr_scheduler", help="Need lr scheduler or not",
-                        type=bool, default=True)
+    parser.add_argument("-apply_lr_scheduler", help="Need lr scheduler or not", action="store_true")
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
     parser.add_argument("-epochs", dest="epochs", help="Train epochs",
@@ -73,12 +71,11 @@ def main():
     parser.add_argument("-resume", dest="resume", help="Path to pretrained model to continute training",
                         default=None)  # "output/LPBA40_noBN/lpba40_best63.pth"
     parser.add_argument("-interval", dest="interval", help="validation and saving interval", type=int, default=5)
-    parser.add_argument("-visdom", dest="visdom", help="Using Visdom to visualize Training process",
-                        type=bool, default=False)
+    parser.add_argument("-visdom", help="Using Visdom to visualize Training process", action="store_true")
 
     # losses args
-    parser.add_argument("-weakly_sup", type=bool, help="if apply weakly supervised, use reg dice loss, else not",
-                        dest="weakly_sup", default=False)
+    parser.add_argument("-weakly_sup", help="if apply weakly supervised, use reg dice loss, else not",
+                        action="store_true")
     parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE', 'NCC'],
                         dest="sim_loss", default='NCC')
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
