@@ -19,7 +19,7 @@ from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedul
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset, LPBADataset
 from utils.losses import OHEMLoss, MIND_SSC_loss, gradient_loss, NCCLoss, dice_loss
-from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
+from models import Reg_Obelisk_Unet, Reg_Obelisk_Unet_noBN, OBELISK, subplanar_pdd, fit_sub2dense, SpatialTransformer
 
 
 def split_at(s, c, n):
@@ -58,6 +58,10 @@ def main():
                         default="output/LPBA40_noBN_/")
 
     # training args
+    parser.add_argument("-grid_size", help="subplanar_pdd grid_size", type=int, default=29)
+    parser.add_argument("-displacement_width", help="subplanar_pdd displacement_width", type=int, default=15)
+    parser.add_argument("-disp_range", help="subplanar_pdd disp_range", type=float, default=0.4)
+
     parser.add_argument("-with_BN", help="OBELISK Reg_Net with BN or not", action="store_true")
     parser.add_argument("-batch_size", dest="batch_size", help="Dataloader batch size",
                         type=int, default=1)
@@ -91,6 +95,9 @@ def main():
     args = parser.parse_args()
     d_options = vars(args)
     is_visdom = args.visdom
+    grid_size = args.grid_size
+    displacement_width = args.displacement_width
+    disp_range = args.disp_range
 
     if not os.path.exists(d_options['output']):
         os.mkdir(d_options['output'])
@@ -144,6 +151,7 @@ def main():
         full_res = [192, 160, 192]  # full resolution
     elif d_options['dataset'] == 'lpba40':
         full_res = [160, 192, 160]  # full resolution
+    H, W, D = full_res[0], full_res[1], full_res[2]
 
     if args.with_BN:
         reg_net = Reg_Obelisk_Unet(full_res)
@@ -151,24 +159,38 @@ def main():
     else:
         reg_net = Reg_Obelisk_Unet_noBN(full_res)
         logger.info(f"Training by Reg_Obelisk_Unet_noBN without BN")
+    # initialise trainable network parts
+    reg2d = subplanar_pdd()
+    reg2d.cuda()
+    shift_2d, shift_2d_min, grid_xyz = reg2d.get_attributes()
+    # set-up 2D offsets for multi-step 2.5D estimation
+    shift_2d_min.requires_grad = False
+
+    net = OBELISK(full_res=full_res)
+    net.apply(init_weights)
+    net.cuda()
+    net.train()
+
     STN_train = SpatialTransformer(full_res)  # STN training for image align
     STN_label = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
     reg_net.cuda()
     STN_train.cuda().train()
     STN_label.cuda().eval()  # just for validation
 
-    # STN has no trainable parameters
-    optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
+    # train using Adam with weight decay and exponential LR decay
+    optimizer = optim.AdamW(list(net.parameters()) +
+                            list(reg2d.parameters()), lr=0.005)
     if args.apply_lr_scheduler:
-        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
         # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
-        scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-                                                    warmup_steps=d_options["warmup_steps"],
-                                                    total_steps=end_epoch,)
+        # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+        #                                             warmup_steps=d_options["warmup_steps"],
+        #                                             total_steps=end_epoch,)
+
     # losses
     if args.sim_loss == "MIND":
         sim_criterion = MIND_SSC_loss
-        args.alpha = 4.0
+        args.alpha = 0.025  # 4.0
     elif args.sim_loss == "MSE":
         sim_criterion = nn.MSELoss()
         args.alpha = 0.025
@@ -197,9 +219,7 @@ def main():
 
     run_loss = np.zeros([end_epoch, 4])
     dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
-    steps = 0
-    logger.info(f'Training set sizes: {len(train_dataset)}, Train loader size: {len(train_loader)}, '
-                f'Validation set sizes: {len(val_dataset)}')
+    logger.info(f'Training set sizes: {len(train_dataset)}, Validation set sizes: {len(val_dataset)}')
 
     if is_visdom:
         vis = visdom.Visdom()  # using visdom
@@ -219,7 +239,7 @@ def main():
 
     batch_size = args.batch_size
     fixed_loader = iter(fix_loader)
-    fixed_img_, fixed_label_= next(fixed_loader)
+    fixed_img_, fixed_label_ = next(fixed_loader)
     fixed_img = fixed_img_.expand(batch_size, *fixed_img_.shape[1:])
     fixed_label = fixed_label_.expand(batch_size, *fixed_label_.shape[1:])
     fixed_img, fixed_label = fixed_img.cuda(), fixed_label.cuda()  # batch_size=batch_size for train
@@ -236,41 +256,72 @@ def main():
         t1 = 0.0
         t0 = time.time()
 
-        for imgs, segs in train_loader:
-            steps += 1
+        for imgs, segs, mindssc in train_loader:
+            # select random training pair (mini-batch=4 averaging at the end)
             if np.random.choice([0, 1]):
                 # 50% to apply data augment
                 with torch.no_grad():
-                    moving_img, moving_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)
+                    moving_img, moving_label, mind_aug = augmentAffine(imgs.cuda(), segs.cuda(), mindssc.cuda(), 0.0375)
                     # [B, C, D, W, H]
                     torch.cuda.empty_cache()
             else:
-                moving_img, moving_label = imgs.cuda(), segs.cuda()
+                moving_img, moving_label, mind_aug = imgs.cuda(), segs.cuda(), mindssc.cuda()
 
             optimizer.zero_grad()
 
             # Run the data through the model to produce warp and flow field
-            flow_m2f = reg_net(moving_img, fixed_img)
-            m2f_img = STN_train(moving_img, flow_m2f)
-            m2f_label = STN_label(moving_label.float().unsqueeze(1), flow_m2f)
+            # flow_m2f = reg_net(moving_img, fixed_img)
+            # extract obelisk features with channels=24 and stride=3
+            feat_fix = net(fixed_img)  # fixed feature
+            feat_mov = net(moving_img)  # moving feature
+            # find initial through-plane offsets (without gradient tacking)
+            with torch.no_grad():
+                # run forward path with previous weights
+                cost_soft2d, pred2d, cost_avg = reg2d(feat_fix.detach(), feat_mov.detach(),
+                                                      shift_2d.repeat(1, grid_size ** 3, 1, 1, 1))
+                pred2d = pred2d.view(1, grid_size, grid_size, grid_size, 3)
+                # perform instance fit
+                dense_sub, sub_fit = fit_sub2dense(pred2d.detach(), grid_xyz.detach(), cost_avg.detach(),
+                                                   reg2d.alpha.detach(),
+                                                   H, W, D, 5, 30)
+                # slighlty augment the found through-plane offsets
+                sub_fit2 = sub_fit.view(3, -1) + 0.05 * torch.randn(3, grid_size ** 3).cuda()
+                shift_2d_min[0, :, :, 0, 2] = sub_fit2.view(3, -1)[2, :].view(-1, 1).repeat(1, displacement_width ** 2)
+                shift_2d_min[0, :, :, 1, 1] = sub_fit2.view(3, -1)[1, :].view(-1, 1).repeat(1, displacement_width ** 2)
+                shift_2d_min[0, :, :, 2, 0] = sub_fit2.view(3, -1)[0, :].view(-1, 1).repeat(1, displacement_width ** 2)
+                shift_2d_min.requires_grad = False
+
+            # run 2.5D probabilistic dense displacement (pdd2.5-net)
+            cost_soft2d, pred2d, cost_avg = reg2d(feat_fix, feat_mov, shift_2d_min)
 
             # Calculate loss
-            if steps <= 300:
+            if epoch * len(train_loader) <= 100:
                 # grad loss weight warmup to stabilise the training
-                alpha = float(torch.linspace(30 * args.alpha, args.alpha, 300)[steps-1])
+                alpha = args.alpha * 5
             else:
                 alpha = args.alpha
 
-            sim_loss = sim_criterion(m2f_img, fixed_img)
-            grad_loss = grad_criterion(flow_m2f)
-            dice_loss_ = dice_criterion(m2f_label.squeeze(1), fixed_label) if args.weakly_sup else 0.
-            total_loss = args.sim_weight * sim_loss + args.dice_weight * dice_loss_ + alpha * grad_loss
+            # diffusion regularisation loss
+            pred2d = pred2d.view(1, grid_size, grid_size, grid_size, 3)
+            grad_loss = grad_criterion(pred2d)
+            # nonlocal MIND loss
+            fixed_mind = F.grid_sample(mind_aug.cuda(), grid_xyz, padding_mode='border',
+                                       align_corners=corner).detach()  # .long().squeeze(1)
+            moving_unfold = F.grid_sample(mindssc[idx[1:2], :, :, :].cuda(), grid_xyz + shift_2d_min,
+                                          padding_mode='border',
+                                          align_corners=corner)
+            nonlocal_mind = 1 / 3 * torch.sum(moving_unfold * cost_soft2d.view(1, 1, -1, displacement_width ** 2, 3),
+                                              [3, 4]).view(1, 12, grid_size ** 3, 1,
+                                                           1)  # *class_weight.view(1,-1,1,1,1)
+            mindloss2d = ((nonlocal_mind - fixed_mind) ** 2)
+            mindloss = mindloss2d.mean()
+            total_loss = args.dice_weight * label_loss + alpha * grad_loss
 
             total_loss.backward()
 
             run_loss[epoch, 0] += total_loss.item()
             run_loss[epoch, 1] += args.sim_weight * sim_loss.item()
-            run_loss[epoch, 2] += args.dice_weight * dice_loss_
+            run_loss[epoch, 2] += args.dice_weight * label_loss
             run_loss[epoch, 3] += alpha * grad_loss.item()
 
             optimizer.step()
@@ -345,7 +396,7 @@ def main():
             state_dict = {
                 "checkpoint": reg_net.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict() if args.apply_lr_scheduler else None,
+                "scheduler": scheduler.state_dict(),
                 "best_acc": best_acc,
                 "epoch": epoch,
             }
