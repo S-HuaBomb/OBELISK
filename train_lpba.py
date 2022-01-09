@@ -342,7 +342,7 @@ def main():
             state_dict = {
                 "checkpoint": reg_net.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
+                "scheduler": scheduler.state_dict() if args.apply_lr_scheduler else None,
                 "best_acc": best_acc,
                 "epoch": epoch,
             }
