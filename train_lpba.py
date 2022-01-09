@@ -159,11 +159,12 @@ def main():
 
     # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
-    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
-    # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
-    scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-                                                warmup_steps=d_options["warmup_steps"],
-                                                total_steps=end_epoch,)
+    if args.apply_lr_scheduler:
+        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+        # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
+        scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+                                                    warmup_steps=d_options["warmup_steps"],
+                                                    total_steps=end_epoch,)
     # losses
     if args.sim_loss == "MIND":
         sim_criterion = MIND_SSC_loss
