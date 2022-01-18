@@ -152,8 +152,10 @@ def main():
         reg_net = Reg_Obelisk_Unet_noBN(full_res)
         logger.info(f"Training by Reg_Obelisk_Unet_noBN without BN")
     STN = SpatialTransformer(full_res)  # STN training for image align
+    STN_val = SpatialTransformer(full_res, mode="nearest")  # STN training for seg align
     reg_net.cuda()
     STN.cuda().train()
+    STN_val.cuda().eval()
 
     # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
@@ -302,7 +304,7 @@ def main():
 
                 with torch.no_grad():
                     flow_m2f = reg_net(moving_img, fixed_img_)
-                    m2f_label = STN_label(moving_label, flow_m2f)
+                    m2f_label = STN_val(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
                     dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu(), num_labels)
