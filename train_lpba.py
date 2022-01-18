@@ -248,7 +248,7 @@ def main():
             # Pytorch grid_sample用最近邻插值梯度会是0。
             # 如果用线性插值的话，不能直接插原label，要先one-hot。
             moving_label_one_hot = F.one_hot(
-                moving_label, num_classes=num_labels).permute(0, 4, 1, 2, 3).float()  # NxNum_LabelsxHxWxD
+                moving_label.long(), num_classes=num_labels).permute(0, 4, 1, 2, 3).float()  # NxNum_LabelsxHxWxD
 
             optimizer.zero_grad()
 
