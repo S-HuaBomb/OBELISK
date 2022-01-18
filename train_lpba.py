@@ -18,7 +18,7 @@ from utils.metrics import Get_Jac
 from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset, LPBADataset
-from utils.losses import OHEMLoss, MIND_SSC_loss, gradient_loss, NCCLoss, dice_loss
+from utils.losses import OHEMLoss, MIND_SSC_loss, gradient_loss, NCCLoss, dice_loss, multi_class_dice_loss
 from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
 
 
@@ -151,11 +151,9 @@ def main():
     else:
         reg_net = Reg_Obelisk_Unet_noBN(full_res)
         logger.info(f"Training by Reg_Obelisk_Unet_noBN without BN")
-    STN_train = SpatialTransformer(full_res)  # STN training for image align
-    STN_label = SpatialTransformer(full_res, mode="nearest")  # STN validation for label align
+    STN = SpatialTransformer(full_res)  # STN training for image align
     reg_net.cuda()
-    STN_train.cuda().train()
-    STN_label.cuda().eval()  # just for validation
+    STN.cuda().train()
 
     # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
@@ -176,7 +174,7 @@ def main():
         sim_criterion = NCCLoss()
         args.alpha = 1.5
     grad_criterion = gradient_loss
-    dice_criterion = dice_loss
+    dice_criterion = multi_class_dice_loss  # dice_loss
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
@@ -192,7 +190,7 @@ def main():
         reg_net.apply(init_weights)
 
     logger.info(f'obelisk params: {countParam(reg_net)}')  # obelisk params 252509
-    logger.info(f"STN params: {countParam(STN_train)}")  # STN params: 0
+    logger.info(f"STN params: {countParam(STN)}")  # STN params: 0
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
     run_loss = np.zeros([end_epoch, 4])
@@ -247,12 +245,17 @@ def main():
             else:
                 moving_img, moving_label = imgs.cuda(), segs.cuda()
 
+            # Pytorch grid_sample用最近邻插值梯度会是0。
+            # 如果用线性插值的话，不能直接插原label，要先one-hot。
+            moving_label_one_hot = F.one_hot(
+                moving_label, num_classes=num_labels).permute(0, 4, 1, 2, 3).float()  # NxNum_LabelsxHxWxD
+
             optimizer.zero_grad()
 
             # Run the data through the model to produce warp and flow field
             flow_m2f = reg_net(moving_img, fixed_img)
-            m2f_img = STN_train(moving_img, flow_m2f)
-            m2f_label = STN_label(moving_label.float().unsqueeze(1), flow_m2f)
+            m2f_img = STN(moving_img, flow_m2f)
+            m2f_label = STN(moving_label_one_hot, flow_m2f)
 
             # Calculate loss
             if steps <= 300:
@@ -263,7 +266,8 @@ def main():
 
             sim_loss = sim_criterion(m2f_img, fixed_img)
             grad_loss = grad_criterion(flow_m2f)
-            dice_loss_ = dice_criterion(m2f_label.squeeze(1), fixed_label) if args.weakly_sup else 0.
+            dice_loss_ = dice_criterion(
+                F.softmax(m2f_label, dim=1), fixed_label, num_labels)  if args.weakly_sup else 0.
             total_loss = args.sim_weight * sim_loss + args.dice_weight * dice_loss_ + alpha * grad_loss
 
             total_loss.backward()
