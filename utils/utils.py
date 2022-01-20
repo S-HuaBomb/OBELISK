@@ -65,7 +65,7 @@ def countParam(model):
     return params
 
 
-def dice_coeff(outputs, labels, max_label):
+def dice_coeff(outputs, labels):
     """
     Evaluation function for Dice score of segmentation overlap
     """

@@ -41,15 +41,13 @@ class LPBADataset(Dataset):
         label_path = self.label_paths[index]
         img_arr = sitk.GetArrayFromImage(sitk.ReadImage(img_path))[np.newaxis, ...].astype(np.float32)
         label_arr = sitk.GetArrayFromImage(sitk.ReadImage(label_path)).astype(np.float32)
-        # 这两个标签没有对应的结构
-        label_arr[label_arr == 181.] = 0.
-        label_arr[label_arr == 182.] = 0.
+        # # 这两个标签没有对应的结构，已经预处理
+        # label_arr[label_arr == 181.] = 0.
+        # label_arr[label_arr == 182.] = 0.
         return img_arr, label_arr
 
     def get_labels_num(self):
         a_label = nib.load(self.label_paths[0]).get_fdata()
-        a_label[a_label == 181.] = 0.
-        a_label[a_label == 182.] = 0.
         return int(len(np.unique(a_label)))
 
 

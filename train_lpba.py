@@ -309,7 +309,7 @@ def main():
                     m2f_label = STN_val(moving_label, flow_m2f)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu(), num_labels)
+                    dice_one_val = dice_coeff(m2f_label.long().cpu(), fixed_label_.long().cpu())
                 dice_all_val[val_idx] = dice_one_val
                 Jac = Get_Jac(flow_m2f.cpu())
                 Jac_std.append(Jac.std())
