@@ -159,8 +159,9 @@ def main():
 
     # STN has no trainable parameters
     optimizer = optim.Adam(reg_net.parameters(), lr=d_options['reg_lr'])
-    if args.apply_lr_scheduler:
-        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+    if args.apply_lr_scheduler and d_options['resume']:
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+    elif args.apply_lr_scheduler:
         # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
         scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
                                                     warmup_steps=d_options["warmup_steps"],
@@ -185,8 +186,10 @@ def main():
         scheduler.load_state_dict(obelisk["scheduler"]) if args.apply_lr_scheduler else None
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
+        steps = 301  # obelisk["steps"]
         logger.info(f"Training resume from {d_options['resume']}")
     else:
+        steps = 0
         best_acc = 0
         star_epoch = 1
         reg_net.apply(init_weights)
@@ -197,7 +200,6 @@ def main():
 
     run_loss = np.zeros([end_epoch, 4])
     dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
-    steps = 0
     logger.info(f'Training set sizes: {len(train_dataset)}, Train loader size: {len(train_loader)}, '
                 f'Validation set sizes: {len(val_dataset)}')
 
@@ -354,11 +356,13 @@ def main():
                 "scheduler": scheduler.state_dict() if args.apply_lr_scheduler else None,
                 "best_acc": best_acc,
                 "epoch": epoch,
+                "steps": steps
             }
 
             torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_latest.pth")
 
             if is_best:
+                np.save("run_loss.npy", run_loss)
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
                 # if is_visdom:
