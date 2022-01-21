@@ -1,15 +1,9 @@
-from __future__ import print_function
-
 import os
 import argparse
 
+from utils.tools import get_logger
 from utils.trainer import training
 from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN
-
-
-def split_at(s, c, n):
-    words = s.split(c)
-    return c.join(words[:n]), c.join(words[n:])
 
 
 def main():
