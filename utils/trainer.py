@@ -9,9 +9,9 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import visdom
 
-from utils.tools import init_weights, countParam, dice_coeff, \
-    get_cosine_schedule_with_warmup, get_data_loader
+from utils.tools import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup
 from utils.losses import OHEMLoss, MIND_SSC_loss, gradient_loss, NCCLoss, dice_loss, multi_class_dice_loss
+from utils.datasets import get_data_loader
 from utils.metrics import Get_Jac
 from utils.augment_3d import augmentAffine
 
