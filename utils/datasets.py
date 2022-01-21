@@ -98,6 +98,55 @@ class MyDataset(Dataset):
         return torch.sqrt(1.0 / (torch.bincount(self.segs.view(-1)).float()))
 
 
+def get_data_loader(logger,
+                    dataset="lpba",
+                    img_folder=None,
+                    img_name=None,
+                    label_folder=None,
+                    label_name=None,
+                    train_scannumbers=None,
+                    val_scannumbers=None,
+                    fix_scannumbers=None,
+                    batch_size=2,
+                    is_shuffle=True,
+                    num_workers=2,
+                    for_reg=True):
+    if dataset == "lpba":
+        get_dataset = LPBADataset
+    elif dataset in ["tcia", "bcv", "chaos"]:
+        get_dataset = MyDataset
+    train_dataset = get_dataset(image_folder=img_folder,
+                                image_name=img_name,
+                                label_folder=label_folder,
+                                label_name=label_name,
+                                scannumbers=train_scannumbers)
+
+    val_dataset = get_dataset(image_folder=img_folder,
+                              image_name=img_name,
+                              label_folder=label_folder,
+                              label_name=label_name,
+                              scannumbers=val_scannumbers)
+
+    if for_reg:
+        fix_dataset = get_dataset(image_folder=img_folder,
+                                  image_name=img_name,
+                                  label_folder=label_folder,
+                                  label_name=label_name,
+                                  scannumbers=fix_scannumbers)
+        fix_loader = DataLoader(dataset=fix_dataset)
+
+    train_loader = DataLoader(dataset=train_dataset,
+                              batch_size=batch_size,
+                              shuffle=is_shuffle, num_workers=num_workers)
+    val_loader = DataLoader(dataset=val_dataset,
+                            batch_size=1)
+    num_labels = train_dataset.get_labels_num()
+    logger.info(f'Training set sizes: {len(train_dataset)}, Train loader size: {len(train_loader)}, '
+                f'Validation set sizes: {len(val_dataset)}')
+
+    return train_loader, val_loader, fix_loader if for_reg else None, num_labels
+
+
 if __name__ == '__main__':
     # my_dataset = MyDataset(
     #     image_folder=r"E:\src_code\shb\OBELISK\preprocess\datasets\MICCAI2021_masked\L2R_Task1_CT\CTs",
