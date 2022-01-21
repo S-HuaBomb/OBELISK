@@ -4,7 +4,7 @@ import nibabel as nib
 import SimpleITK as sitk
 import torch
 from torch.utils.data import Dataset, DataLoader
-from utils.tools import ImgTransform
+from utils import ImgTransform
 
 
 class CT2MRDataset(Dataset):
