@@ -183,7 +183,8 @@ def main():
         obelisk = torch.load(d_options['resume'])
         reg_net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
-        scheduler.load_state_dict(obelisk["scheduler"]) if args.apply_lr_scheduler else None
+        scheduler.load_state_dict(obelisk["scheduler"]) \
+            if args.apply_lr_scheduler and obelisk["scheduler"] is not None else None
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         steps = 301  # obelisk["steps"]
