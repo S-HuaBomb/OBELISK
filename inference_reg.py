@@ -13,7 +13,7 @@ import argparse
 
 cuda_idx = 0
 
-from utils.utils import countParam, dice_coeff
+from utils.tools import countParam, dice_coeff
 from utils.datasets import MyDataset
 from torch.utils.data import DataLoader
 from models import Reg_Obelisk_Unet, SpatialTransformer, Reg_Obelisk_Unet_noBN

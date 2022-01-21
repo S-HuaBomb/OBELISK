@@ -17,7 +17,7 @@ import visdom
 
 import argparse
 
-from utils.utils import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
+from utils.tools import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
 from utils.datasets import MyDataset
 from utils.losses import OHEMLoss, multi_class_dice_loss
