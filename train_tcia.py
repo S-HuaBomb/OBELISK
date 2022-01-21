@@ -93,7 +93,7 @@ def main():
         full_res = [160, 192, 160]  # full resolution
 
     if args.with_BN:
-        reg_net = Net(full_res)
+        reg_net = Reg_Obelisk_Unet(full_res)
         logger.info(f"Training by Reg_Obelisk_Unet with BN")
     else:
         reg_net = Reg_Obelisk_Unet_noBN(full_res)
