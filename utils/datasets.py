@@ -139,7 +139,7 @@ def get_data_loader(logger,
                               batch_size=batch_size,
                               shuffle=is_shuffle, num_workers=num_workers)
     val_loader = DataLoader(dataset=val_dataset,
-                            batch_size=1)
+                            batch_size=1, num_workers=num_workers)
     num_labels = train_dataset.get_labels_num()
     logger.info(f'Training set sizes: {len(train_dataset)}, Train loader size: {len(train_loader)}, '
                 f'Validation set sizes: {len(val_dataset)}')
