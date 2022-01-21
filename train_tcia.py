@@ -78,7 +78,7 @@ def main():
     logger = get_logger(args.output)
     if args.weakly_sup:
         logger.info("Weakly supervised training with dice loss")
-    logger.info(f"output to {output}")
+    logger.info(f"output to {args.output}")
 
     # load train images and segmentations
     logger.info(f'train scannumbers: {args.train_scannumbers}')
