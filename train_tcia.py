@@ -61,7 +61,7 @@ def main():
     parser.add_argument("-sim_loss", type=str, help="similarity criterion", choices=['MIND', 'MSE', 'NCC'],
                         dest="sim_loss", default='NCC')
     parser.add_argument("-alpha", type=float, help="weight for regularization loss",
-                        dest="alpha", default=0.025)  # recommend 1.0 for ncc, 0.01 for mse, 0.15 ~ 2.5 for MIND-SSC
+                        dest="alpha", default=0.025)  # ncc: 1.5, mse: 0.025, MIND-SSC: 4.0
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
                         type=float, default=1.0)
     parser.add_argument("-sim_weight", dest="sim_weight", help="OHEM loss weight",

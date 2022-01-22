@@ -58,7 +58,7 @@ class MyDataset(Dataset):
                  label_folder,
                  label_name,
                  scannumbers,
-                 img_transform=ImgTransform()):
+                 img_transform=ImgTransform(scale_type="max-min")):
         super(MyDataset, self).__init__()
         if image_name.find("?") == -1 or label_name.find("?") == -1:
             raise ValueError('error! filename must contain \"?\" to insert your chosen numbers')

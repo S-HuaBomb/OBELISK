@@ -46,13 +46,10 @@ def training(args, logger, reg_net, STN, STN_val):
     # losses
     if args.sim_loss == "MIND":
         sim_criterion = MIND_SSC_loss
-        args.alpha = 4.0
     elif args.sim_loss == "MSE":
         sim_criterion = nn.MSELoss()
-        args.alpha = 0.025
     elif args.sim_loss == "NCC":
         sim_criterion = NCCLoss()
-        args.alpha = 1.5
     grad_criterion = gradient_loss
     dice_criterion = multi_class_dice_loss  # dice_loss
 
@@ -118,7 +115,7 @@ def training(args, logger, reg_net, STN, STN_val):
             if np.random.choice([0, 1]):
                 # 50% to apply data augment
                 with torch.no_grad():
-                    moving_img, moving_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.075)
+                    moving_img, moving_label = augmentAffine(imgs.cuda(), segs.cuda(), strength=0.05)
                     # [B, C, D, W, H]
                     torch.cuda.empty_cache()
             else:
@@ -139,7 +136,7 @@ def training(args, logger, reg_net, STN, STN_val):
             # Calculate loss
             if steps <= 300:
                 # grad loss weight warmup to stabilise the training
-                alpha = float(torch.linspace(30 * args.alpha, args.alpha, 300)[steps - 1])
+                alpha = float(torch.linspace(50 * args.alpha, args.alpha, 300)[steps - 1])
             else:
                 alpha = args.alpha
 
@@ -237,8 +234,8 @@ def training(args, logger, reg_net, STN, STN_val):
             torch.save(state_dict, args.output + f"{args.dataset}_latest.pth")
 
             if is_best:
-                np.save("run_loss.npy", run_loss)
-                torch.save(state_dict, args.output + f"{args.dataset}_best.pth")
+                np.save(os.path.join(args.output, "run_loss.npy"), run_loss)
+                torch.save(state_dict, os.path.join(args.output, f"{args.dataset}_best.pth"))
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
                 # if args.visdom:
                 #     vis.line(Y=[best_acc], X=[epoch], win='best_acc', update='append', opts=best_acc_opt)
