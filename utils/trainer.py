@@ -77,7 +77,7 @@ def training(args, logger, reg_net, STN, STN_val):
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
     run_loss = np.zeros([args.epochs, 4])
-    dice_all_val = np.zeros((len(val_dataset), num_labels - 1))
+    dice_all_val = np.zeros((len(args.val_scannumbers), num_labels - 1))
 
     if args.visdom:
         vis = visdom.Visdom()  # using visdom
