@@ -97,6 +97,9 @@ class MyDataset(Dataset):
     def get_class_weight(self):
         return torch.sqrt(1.0 / (torch.bincount(self.segs.view(-1)).float()))
 
+    def get_labels_num(self):
+        return int(len(self.segs[0].unique()))
+
 
 def get_data_loader(logger,
                     dataset="lpba",
