@@ -140,7 +140,9 @@ def get_data_loader(logger,
 
     train_loader = DataLoader(dataset=train_dataset,
                               batch_size=batch_size,
-                              shuffle=is_shuffle, num_workers=num_workers)
+                              shuffle=is_shuffle,
+                              drop_last=True,
+                              num_workers=num_workers)
     val_loader = DataLoader(dataset=val_dataset,
                             batch_size=1, num_workers=num_workers)
     num_labels = train_dataset.get_labels_num()
