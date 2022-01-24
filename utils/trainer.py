@@ -73,7 +73,7 @@ def training(args, logger, reg_net, STN, STN_val):
     logger.info(f"STN params: {countParam(STN)}")  # STN params: 0
     logger.info(f'initial offset std: {torch.std(reg_net.offset1.data).item() :.3f}')  # initial offset std 0.050
 
-    run_loss = np.zeros([args.epochs, 4])
+    run_loss = np.zeros([args.epochs + 1, 4])
     dice_all_val = np.zeros((len(args.val_scannumbers), num_labels - 1))
 
     if args.visdom:
@@ -235,6 +235,7 @@ def training(args, logger, reg_net, STN, STN_val):
 
             if is_best:
                 np.save(os.path.join(args.output, "run_loss.npy"), run_loss)
+                np.save(os.path.join(args.output, "dice_all_val.npy"), dice_all_val)
                 torch.save(state_dict, os.path.join(args.output, f"{args.dataset}_best.pth"))
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
                 # if args.visdom:
