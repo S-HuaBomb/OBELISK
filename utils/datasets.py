@@ -58,41 +58,52 @@ class MyDataset(Dataset):
                  label_folder,
                  label_name,
                  scannumbers,
-                 img_transform=ImgTransform(scale_type="max-min")):
+                 img_transform=ImgTransform(scale_type="max-min"),
+                 for_inf=False):
         super(MyDataset, self).__init__()
+        self.for_inf = for_inf
+
         if image_name.find("?") == -1 or label_name.find("?") == -1:
             raise ValueError('error! filename must contain \"?\" to insert your chosen numbers')
 
         if len(scannumbers) == 0:
             raise ValueError(f"You have to choose which scannumbers [list] to be train")
 
-        self.imgs, self.segs = [], []
+        self.imgs, self.segs, self.img_affines, self.seg_affines = [], [], [], []
         for i in scannumbers:
             # /share/data_rechenknecht01_1/heinrich/TCIA_CT
             filescan1 = image_name.replace("?", str(i))
-            img = nib.load(os.path.join(image_folder, filescan1)).get_fdata()
+            img_nib = nib.load(os.path.join(image_folder, filescan1))
+            self.img_affines.append(img_nib.affine)
             if img_transform is not None:
                 # scale img in mean-std way
-                img = img_transform(img)
+                img = img_transform(img_nib.get_fdata())
 
             fileseg1 = label_name.replace("?", str(i))
-            seg = nib.load(os.path.join(label_folder, fileseg1)).get_fdata()
+            seg_nib = nib.load(os.path.join(label_folder, fileseg1))
+            self.seg_affines.append(seg_nib.affine)
 
             self.imgs.append(torch.from_numpy(img).unsqueeze(0).unsqueeze(0).float())
-            self.segs.append(torch.from_numpy(seg).unsqueeze(0).long())
+            self.segs.append(torch.from_numpy(seg_nib.get_fdata()).unsqueeze(0).long())
+
 
         self.imgs = torch.cat(self.imgs, 0)
         # self.imgs = (self.imgs - self.imgs.mean()) / self.imgs.std()  # mean-std scale
         # self.imgs = (self.imgs - self.imgs.min()) / (self.imgs.max() - self.imgs.min())  # max-min scale to [0, 1]
         # self.imgs = self.imgs / 1024.0 + 1.0  # raw data scale to [0, 3]
         self.segs = torch.cat(self.segs, 0)
+        self.img_affines = np.stack(self.img_affines)
+        self.seg_affines = np.stack(self.seg_affines)
         self.len_ = min(len(self.imgs), len(self.segs))
 
     def __len__(self):
         return self.len_
 
     def __getitem__(self, idx):
-        return self.imgs[idx], self.segs[idx]
+        if not self.for_inf:
+            return self.imgs[idx], self.segs[idx]
+        else:
+            return self.imgs[idx], self.segs[idx], self.img_affines[idx], self.seg_affines[idx]
 
     def get_class_weight(self):
         return torch.sqrt(1.0 / (torch.bincount(self.segs.view(-1)).float()))

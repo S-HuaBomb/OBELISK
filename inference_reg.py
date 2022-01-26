@@ -6,6 +6,7 @@ import time
 import os
 import pathlib
 import sys
+import SimpleITK as sitk
 import nibabel as nib
 import scipy.io
 
@@ -38,29 +39,29 @@ def main():
                         help="either tcia or visceral", default='tcia', required=False)
     # parser.add_argument("-fold", dest="fold", help="number of training fold", default=1, required=True)
     parser.add_argument("-model", dest="model", help="filename of pytorch pth model",
-                        default='output/reg_chaos_best.pth',  # models/obeliskhybrid_tcia_fold1.pth
+                        default='output/TCIA_BN_MSE_Weaklysup_softDice/tcia_best53.pth',  # models/obeliskhybrid_tcia_fold1.pth
                         )
     parser.add_argument("-with_BN", help="OBELISK Reg_Net with BN or not", action="store_true")
 
     parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
-                        default="preprocess/MICCAI2021/auxiliary/L2R_Task1_MR/MRIs",
+                        default="preprocess/datasets/process_cts",
                         required=False)
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default='preprocess/MICCAI2021/auxiliary/L2R_Task1_MR/Labels')
+                        default='preprocess/datasets/process_labels')
     parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",  # img?_bcv_CT.nii.gz
-                        default='img?_chaos_MR.nii.gz')
+                        default='pancreas_ct?.nii.gz')
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="seg?_chaos_MR.nii.gz")
+                        default="label_ct?.nii.gz")
     parser.add_argument("-fix_number", dest="fix_number", help="number of fixed image",
                         type=lambda s: [int(n) for n in s.split()],
-                        default="1")
+                        default="7")
     parser.add_argument("-mov_numbers", dest="mov_numbers", help="list of numbers of moving images",
                         type=lambda s: [int(n) for n in s.split()],
-                        default="2 3 4 5 6 7 8 9 10")
+                        default="2 3 5 6 7 8 9 10")
 
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
-                        default="output/reg_preds/LPBA40/")
+                        default="output/reg_preds/TCIA/")
 
     args = parser.parse_args()
     d_options = vars(args)
@@ -108,7 +109,13 @@ def main():
 
     total_time = []
 
-    def inference(moving_img, moving_label, fixed_img=fixed_img, fixed_label=fixed_label, save_name=''):
+    def inference(moving_img,
+                  moving_label,
+                  fixed_img=fixed_img,
+                  fixed_label=fixed_label,
+                  img_affine=None,
+                  seg_affine=None,
+                  save_name=''):
         moving_label = moving_label.unsqueeze(1).float()  # [B, C, D, W, H]
         if torch.cuda.is_available() == 1:
             print('using GPU acceleration')
@@ -119,7 +126,6 @@ def main():
             STN_label.cuda()
             STN_img.cuda()
         with torch.no_grad():
-            print(f"input moving img shape: {moving_img.shape}, moving label shape: {moving_label.shape}")
             t0 = time.time()
             # warped image and label by flow
             pred_flow = net(moving_img, fixed_img)
@@ -127,24 +133,24 @@ def main():
             pred_label = STN_label(moving_label, pred_flow)
             t1 = time.time()
             total_time.append(t1 - t0)
-            print(f"predict moved label shape: {pred_label.shape}")  # torch.Size([1, 1, 192, 160, 192])
             # if d_options['dataset'] == 'visceral':
             #     predict = F.interpolate(predict, size=[D_in0, H_in0, W_in0], mode='trilinear', align_corners=False)
 
-        save_path = os.path.join(d_options['output'], 'pred?_lpba.nii.gz')
+        save_path = os.path.join(d_options['output'], f"pred?_{d_options['dataset']}.nii.gz")
 
-        nib.save(nib.Nifti1Image(pred_img.squeeze().numpy(), np.eye(4)),
+        nib.save(nib.Nifti1Image(pred_img.squeeze().numpy(), img_affine),
                  save_path.replace("?", f"{save_name}_warped"))
-        nib.save(nib.Nifti1Image(pred_flow.permute(0, 2, 3, 4, 1).squeeze().numpy(), np.eye(4)),
+        nib.save(nib.Nifti1Image(pred_flow.permute(0, 2, 3, 4, 1).squeeze().numpy(), img_affine),
                  save_path.replace("?", f"{save_name}_flow"))
-        nib.save(nib.Nifti1Image(pred_label.short().squeeze().numpy(), np.eye(4)),
+        nib.save(nib.Nifti1Image(pred_label.short().squeeze().numpy(), seg_affine),
                  save_path.replace("?", f"{save_name}_label"))
+        print(f"warped scan number {save_name} save to {d_options['output']}")
         del pred_flow, pred_img
 
         dice = dice_coeff(pred_label.long().cpu(), fixed_label.cpu())
         np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
-        print('Dice validation:', dice, 'Avg.', '%0.3f' % (dice.mean()),
-              'Std.', dice.std(), 'time:', np.mean(total_time))
+        print(f'Dice validation: {dice}', f'Avg. {dice.mean() :.3f}',
+              f'Std. {dice.std() :.3f}', f"time: {np.mean(total_time) :.3f}")
         # Dice validation: [ 0.939  0.648  0.877  0.808  0.690  0.959  0.914  0.554] Avg. 0.798
 
     if os.path.isfile(d_options['input']):
@@ -160,11 +166,16 @@ def main():
                                  image_name=img_name,
                                  label_folder=label_folder,
                                  label_name=label_name,
-                                 scannumbers=args.mov_numbers)
+                                 scannumbers=args.mov_numbers,
+                                 for_inf=True)
         test_loader = DataLoader(dataset=test_dataset, batch_size=1)
 
-        for idx, (moving_img, moving_label) in enumerate(test_loader):
-            inference(moving_img, moving_label, save_name=str(idx + 1))
+        for idx, (moving_img, moving_label, img_affine, seg_affine) in enumerate(test_loader):
+            inference(moving_img,
+                      moving_label,
+                      img_affine=img_affine.squeeze(0),
+                      seg_affine=seg_affine.squeeze(0),
+                      save_name=str(args.mov_numbers[idx]))
 
 
 if __name__ == '__main__':

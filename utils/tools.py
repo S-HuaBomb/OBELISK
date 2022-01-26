@@ -25,7 +25,7 @@ class ImgTransform:
         scaled img
     """
     def __init__(self, scale_type="mean-std"):
-        assert scale_type in ["mean-std", "max-min"], \
+        assert scale_type in ["mean-std", "max-min", "old-way"], \
             f"scale type include ['mean-std', 'max-min'], but got {scale_type}"
         self.scale_type = scale_type
 
@@ -34,6 +34,8 @@ class ImgTransform:
             return (img - img.mean()) / img.std()
         if self.scale_type == "max-min":
             return (img - img.min()) / (img.max() - img.min())
+        if self.scale_type == "old-way":
+            return img / 1024.0 + 1.0
 
 
 def get_cosine_schedule_with_warmup(optimizer,

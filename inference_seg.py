@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 import time
 import os
+import pathlib
 import sys
 import nibabel as nib
 import scipy.io
@@ -14,6 +15,7 @@ cuda_idx = 0
 
 from utils.tools import countParam, dice_coeff
 from utils.datasets import MyDataset
+from utils import ImgTransform
 from torch.utils.data import DataLoader
 from models.obelisk import Obelisk_Unet
 
@@ -33,26 +35,35 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='bcv', required=False)
+    parser.add_argument("-dataset", dest="dataset", choices=['tcia', 'visceral'], default='tcia', required=False)
     # parser.add_argument("-fold", dest="fold", help="number of training fold", default=1, required=True)
     parser.add_argument("-model", dest="model", help="filename of pytorch pth model",
-                        default='models/obeliskhybrid_tcia_fold1.pth',  # models/obeliskhybrid_tcia_fold1.pth
+                        default='checkpoints/obeliskhybrid_tcia_fold1_raw.pth',  # models/obeliskhybrid_tcia_fold1.pth
                         )
+    parser.add_argument("-old_model",dest="old_model", action="store_true", help="weather I want to load an old model")
+
     parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
-                        default="preprocess/datasets/process_cts/pancreas_ct11.nii.gz",
+                        default="preprocess/datasets/process_cts",
                         required=False)
     parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",  # img?_bcv_CT.nii.gz
-                        default='img?_bcv_CT.nii.gz')
+                        default='pancreas_ct?.nii.gz')
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="seg?_bcv_CT.nii.gz")
+                        default="label_ct?.nii.gz")
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
-                        default="output/preds/pred?_bcv_CT.nii.gz")
+                        default="output/seg_preds/TCIA_old/")
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default=None, required=False)
+                        default="preprocess/datasets/process_labels")
+    parser.add_argument("-inf_numbers", dest="inf_numbers", help="list of numbers of images for inference",
+                        type=lambda s: [int(n) for n in s.split()],
+                        default="1 2 3 4 5 6 7 8 9 10")
 
     options = parser.parse_args()
     d_options = vars(options)
+
+    if not os.path.exists(d_options['output']):
+        # os.makedirs(out_dir, exist_ok=True)
+        pathlib.Path(d_options['output']).mkdir(parents=True, exist_ok=True)
 
     obelisk = torch.load(d_options['model'], map_location=torch.device('cpu'))
 
@@ -65,35 +76,38 @@ def main():
 
     # load pretrained OBELISK model
     net = Obelisk_Unet(class_num, full_res)  # has 8 anatomical foreground labels
-    net.load_state_dict(obelisk["checkpoint"])
+    if d_options['old_model']:
+        net.load_state_dict(obelisk)
+    else:
+        net.load_state_dict(obelisk["checkpoint"])
     print('Successful loaded model with', countParam(net), 'parameters')
 
     net.eval()
 
-    def inference(img_val, seg_val, save_name=''):
+    def inference(img_val, seg_val, seg_affine=None, save_name=''):
         if torch.cuda.is_available() == 1:
             print('using GPU acceleration')
             img_val = img_val.cuda()
             net.cuda()
         with torch.no_grad():
-            print(f"input imageval shape: {img_val.shape}")  # torch.Size([1, 1, 144, 144, 144])
+            # print(f"input imageval shape: {img_val.shape}")  # torch.Size([1, 1, 144, 144, 144])
             predict = net(img_val)
-            print(f"output predict shape: {predict.shape}")  # torch.Size([1, 9, 144, 144, 144])
+            # print(f"output predict shape: {predict.shape}")  # torch.Size([1, 9, 144, 144, 144])
             # if d_options['dataset'] == 'visceral':
             #     predict = F.interpolate(predict, size=[D_in0, H_in0, W_in0], mode='trilinear', align_corners=False)
 
         argmax = torch.argmax(predict, dim=1)
-        print(f"argmax shape: {argmax.shape}")  # torch.Size([1, 144, 144, 144])
+        # print(f"argmax shape: {argmax.shape}")  # torch.Size([1, 144, 144, 144])
         seg_pred = argmax.cpu().short().squeeze().numpy()
         # pred segs: [0 1 2 3 4 5 6 7 8] segs shape: (144, 144, 144)
-        print("pred segs:", np.unique(seg_pred), "segs shape:", seg_pred.shape)
-        seg_img = nib.Nifti1Image(seg_pred, np.eye(4))
-        save_path = d_options['output'].replace("?", save_name)
-        print(f'saving inference seg nifti file to {save_path}')
-        nib.save(seg_img, save_path)
+        seg_img = nib.Nifti1Image(seg_pred, seg_affine)
+
+        save_path = os.path.join(d_options['output'], f"pred?_{d_options['dataset']}.nii.gz")
+        nib.save(seg_img, save_path.replace("?", save_name))
+        print(f"seged scan number {save_name} save to {d_options['output']}")
 
         if seg_val is not None:
-            dice = dice_coeff(torch.from_numpy(seg_pred), seg_val, predict.size(1))
+            dice = dice_coeff(torch.from_numpy(seg_pred), seg_val)
             np.set_printoptions(formatter={'float': '{: 0.3f}'.format})
             print('Dice validation:', dice, 'Avg.', '%0.3f' % (dice.mean()))
             # Dice validation: [ 0.939  0.648  0.877  0.808  0.690  0.959  0.914  0.554] Avg. 0.798
@@ -111,11 +125,17 @@ def main():
                                  image_name=d_options['img_name'],
                                  label_folder=d_options['groundtruth'],
                                  label_name=d_options['label_name'],
-                                 scannumbers=[1, 2, 3, 4, 5])
-
+                                 scannumbers=d_options['inf_numbers'],
+                                 img_transform=ImgTransform(scale_type="old-way"
+                                               if d_options['old_model'] else "mean-std"),
+                                 for_inf=True)
         test_loader = DataLoader(dataset=test_dataset, batch_size=1)
-        for idx, (img_val, seg_val) in enumerate(test_loader):
-            inference(img_val, seg_val, save_name=str(idx + 1))
+
+        for idx, (moving_img, moving_label, img_affine, seg_affine) in enumerate(test_loader):
+            inference(moving_img,
+                      moving_label,
+                      seg_affine=seg_affine.squeeze(0),
+                      save_name=str(d_options['inf_numbers'][idx]))
 
 
 if __name__ == '__main__':

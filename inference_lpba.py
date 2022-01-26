@@ -125,7 +125,6 @@ def main():
             STN_label.cuda()
             STN_img.cuda()
         with torch.no_grad():
-            print(f"input moving img shape: {moving_img.shape}, moving label shape: {moving_label.shape}")
             t0 = time.time()
             # warped image and label by flow
             pred_flow = net(moving_img, fixed_img)
@@ -133,7 +132,6 @@ def main():
             pred_label = STN_label(moving_label, pred_flow)
             t1 = time.time()
             total_time.append(t1 - t0)
-            print(f"predict moved label shape: {pred_label.shape}")  # torch.Size([1, 1, 192, 160, 192])
             # if d_options['dataset'] == 'visceral':
             #     predict = F.interpolate(predict, size=[D_in0, H_in0, W_in0], mode='trilinear', align_corners=False)
 
