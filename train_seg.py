@@ -233,7 +233,6 @@ def main():
             run_loss[epoch, 2] += ohem_weight * ohem_loss.item()
 
             optimizer.step()
-            scheduler.step()  # step wise lr decay
 
             del total_loss
             del predict
@@ -242,7 +241,9 @@ def main():
             del y_label
             torch.cuda.empty_cache()
 
-        # scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
+        if args.apply_lr_scheduler:
+            # scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
+            scheduler.step()
 
         # evaluation on training images
         t1 = time.time() - t0
@@ -292,7 +293,7 @@ def main():
             state_dict = {
                 "checkpoint": net.state_dict(),
                 "optimizer": optimizer.state_dict(),
-                "scheduler": scheduler.state_dict(),
+                "scheduler": scheduler.state_dict() if args.apply_lr_scheduler else None,
                 "best_acc": best_acc,
                 "epoch": epoch,
             }
