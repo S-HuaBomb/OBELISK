@@ -254,7 +254,7 @@ def main():
                     argmax = torch.argmax(predict, dim=1)
                     torch.cuda.synchronize()
                     time_i = (time.time() - t0)
-                    dice_one_val = dice_coeff(argmax.cpu(), segs, num_labels)
+                    dice_one_val = dice_coeff(argmax.cpu(), segs)
                 dice_all_val[val_idx] = dice_one_val
                 del predict
                 del imgs_cuda
