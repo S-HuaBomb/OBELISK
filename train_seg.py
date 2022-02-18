@@ -298,7 +298,17 @@ def main():
             if is_best:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_best.pth")
                 logger.info(f"saved the best model at epoch {epoch}, with best acc {best_acc :.3f}")
-                vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+                if is_visdom:
+                    vis.line(Y=[best_acc], X=[epoch], win='best_acc-', update='append', opts=best_acc_opt)
+            if 0.62 < mean_all_dice < 0.65:
+                torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_63.pth")
+                logger.info(f"saved the 0.63 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
+            if 0.65 < mean_all_dice < 0.70:
+                torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_68.pth")
+                logger.info(f"saved the 0.68 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
+            if 0.70 < mean_all_dice < 0.75:
+                torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_73.pth")
+                logger.info(f"saved the 0.73 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
 
             net.cuda()
 
