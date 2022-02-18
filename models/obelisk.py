@@ -432,11 +432,11 @@ class Reg_Obelisk_Unet_noBN(nn.Module):
 if __name__ == "__main__":
     from torchsummary import summary
 
-    full_res = [192, 160, 192]
+    full_res = [44, 44, 44]
     # seg_net = Obelisk_Unet(num_labels=5, full_res=full_res)
     # seg_net.cuda()
     # summary(model=seg_net, input_size=(1, 192, 160, 192), batch_size=1)
 
     reg_net = Reg_Obelisk_Unet(full_res=full_res)
-    reg_net.cuda()
-    summary(model=reg_net, input_size=[(1, 192, 160, 192), (1, 192, 160, 192)])
+    # reg_net.cuda()
+    summary(model=reg_net, input_size=[(1, 44, 44, 44), (1, 44, 44, 44)])

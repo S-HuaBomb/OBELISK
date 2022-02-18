@@ -19,7 +19,7 @@ import argparse
 
 from utils.tools import init_weights, countParam, dice_coeff, get_cosine_schedule_with_warmup, get_logger
 from utils.augment_3d import augmentAffine
-from utils.datasets import MyDataset
+from utils.datasets import MyDataset, LPBADataset
 from utils.losses import OHEMLoss, multi_class_dice_loss
 from models.obelisk import Obelisk_Unet
 
@@ -33,12 +33,13 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-dataset", dest="dataset", help="either tcia or visceral", default='tcia', required=False)
+    parser.add_argument("-dataset", dest="dataset", choices=["tcia", "visceral", "lpba"], default='lpba',
+                        required=False)
     parser.add_argument("-ctFolder", dest="ctfolder", help="training CTs dataset folder",
                         default='preprocess/datasets/process_cts')
     parser.add_argument("-labelFolder", dest="labelfolder", help="training labels dataset folder",
                         default='preprocess/datasets/process_labels')
-    parser.add_argument("-scannumbers", dest="scannumbers",
+    parser.add_argument("-train_scannumbers", dest="train_scannumbers",
                         help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
                         default="4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 "
                                 "31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49",
@@ -48,6 +49,10 @@ def main():
                         # bcv_CT:
                         # "4 8 9 10 11 12 13 14 15 16 17 18 19 20 21 23 24 25 26 27 28 29 "
                         # "31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49"
+                        type=lambda s: [int(n) for n in s.split()])
+    parser.add_argument("-val_scannumbers", dest="val_scannumbers",
+                        help="list of integers indicating which scans to use, i.e. \"1 2 3\" ",
+                        default="1 2 3 4 5 6 8 9 10",
                         type=lambda s: [int(n) for n in s.split()])
     parser.add_argument("-filescan", dest="filescan",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",
@@ -81,6 +86,7 @@ def main():
     args = parser.parse_args()
     d_options = vars(args)
     is_visdom = d_options["visdom"]
+    dataset_name = d_options['dataset']
 
     if not os.path.exists(d_options['output']):
         os.mkdir(d_options['output'])
@@ -90,8 +96,8 @@ def main():
     logger.info(f"output to {d_options['output']}")
 
     # load train images and segmentations
-    scannumbers = d_options['scannumbers']
-    logger.info(f'scannumbers: {scannumbers}')
+    train_scannumbers = d_options['train_scannumbers']
+    logger.info(f'train scannumbers: {train_scannumbers}')
     if d_options['filescan'].find("?") == -1:
         raise ValueError('error filescan must contain \"?\" to insert numbers')
 
@@ -102,13 +108,15 @@ def main():
                               image_name=file_cts,
                               label_folder=d_options['labelfolder'],
                               label_name=file_labels,
-                              scannumbers=scannumbers)
+                              scannumbers=train_scannumbers,
+                              img_transform=None)
 
     val_dataset = MyDataset(image_folder=d_options['ctfolder'],
                             image_name=file_cts,
                             label_folder=d_options['labelfolder'],
                             label_name=file_labels,
-                            scannumbers=[1, 2, 3, 5, 6, 30])
+                            scannumbers=d_options['val_scannumbers'],
+                            img_transform=None)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=d_options['batch_size'], shuffle=True, num_workers=2)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1)
@@ -129,9 +137,11 @@ def main():
     logger.info(f"num of labels: {num_labels}")
 
     if d_options['dataset'] == 'tcia':
-        full_res = torch.tensor([144, 144, 144]).long()
+        full_res = [144, 144, 144]
     elif d_options['dataset'] == 'bcv':
-        full_res = torch.tensor([192, 160, 192]).long()  # full resolution
+        full_res = [192, 160, 192]  # full resolution
+    elif d_options['dataset'] == 'lpba':
+        full_res = [160, 192, 160]  # full resolution
     net = Obelisk_Unet(num_labels, full_res)
     net.cuda()
 

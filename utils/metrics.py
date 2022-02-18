@@ -30,9 +30,13 @@ def Get_Jac(displacement):
 
 
 if __name__ == '__main__':
-    gt = nib.load(r"output/..sge?_chaos_MR.nii.gz").get_fdata()
-    pred = nib.load(r"output/..pred?_chaos_MR.nii.gz").get_fdata()
-    # gt[gt != 1.] = 0.  # get single object's hd95 dist
-    # pred[pred != 1.] = 0.
+    gtp = r"D:\我的文档\广西大学\研二上学期\开题报告\新建文件夹\image_ct_1019_gtmask.nii.gz"
+    predp = r"D:\我的文档\广西大学\研二上学期\开题报告\新建文件夹\image_ct_1019_predmask.nii.gz"
+    # gt = nib.load(r"output/..sge?_chaos_MR.nii.gz").get_fdata()
+    # pred = nib.load(r"output/..pred?_chaos_MR.nii.gz").get_fdata()
+    gt = nib.load(gtp).get_fdata()
+    pred = nib.load(predp).get_fdata()
+    # gt[gt != 4.] = 0.  # get single object's hd95 dist
+    # pred[pred != 4.] = 0.
     # if not single object, get the multi-objects' avg hd95 dist
     print(hd95(gt, pred))
