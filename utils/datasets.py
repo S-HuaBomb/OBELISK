@@ -75,9 +75,10 @@ class MyDataset(Dataset):
             filescan1 = image_name.replace("?", str(i))
             img_nib = nib.load(os.path.join(image_folder, filescan1))
             self.img_affines.append(img_nib.affine)
+            img = img_nib.get_fdata()
             if img_transform is not None:
                 # scale img in mean-std way
-                img = img_transform(img_nib.get_fdata())
+                img = img_transform(img)
 
             fileseg1 = label_name.replace("?", str(i))
             seg_nib = nib.load(os.path.join(label_folder, fileseg1))
