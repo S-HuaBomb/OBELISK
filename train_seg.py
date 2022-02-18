@@ -67,6 +67,7 @@ def main():
                         type=int, default=2)
     parser.add_argument("-learning_rate", dest="lr", help="Optimizer learning rate, keep pace with batch_size",
                         type=float, default=0.001)
+    parser.add_argument("-apply_lr_scheduler", help="Need lr scheduler or not", action="store_true")
     parser.add_argument("-warmup_steps", dest="warmup_steps", help="step for Warmup scheduler",
                         type=int, default=5)
     parser.add_argument("-dice_weight", dest="dice_weight", help="Dice loss weight",
@@ -146,17 +147,18 @@ def main():
     net.cuda()
 
     optimizer = optim.Adam(net.parameters(), lr=d_options['lr'], weight_decay=0.00001)
-    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
-    scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
-    # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-    #                                             warmup_steps=d_options["warmup_steps"],
-    #                                             total_steps=end_epoch,)
+    if args.apply_lr_scheduler:
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+        # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
+        # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+        #                                             warmup_steps=d_options["warmup_steps"],
+        #                                             total_steps=end_epoch,)
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
         net.load_state_dict(obelisk["checkpoint"])
         optimizer.load_state_dict(obelisk["optimizer"])
-        scheduler.load_state_dict(obelisk["scheduler"])
+        # scheduler.load_state_dict(obelisk["scheduler"]) if args.apply_lr_scheduler else None
         best_acc = obelisk["best_acc"]
         star_epoch = obelisk["epoch"]
         logger.info(f"Training resume from {d_options['resume']}")
@@ -231,6 +233,8 @@ def main():
             run_loss[epoch, 2] += ohem_weight * ohem_loss.item()
 
             optimizer.step()
+            scheduler.step()  # step wise lr decay
+
             del total_loss
             del predict
             torch.cuda.empty_cache()
@@ -238,7 +242,7 @@ def main():
             del y_label
             torch.cuda.empty_cache()
 
-        scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
+        # scheduler.step(run_loss[epoch, 0])  # epoch wise lr decay
 
         # evaluation on training images
         t1 = time.time() - t0
@@ -308,6 +312,9 @@ def main():
                 logger.info(f"saved the 0.68 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
             if 0.70 < mean_all_dice < 0.75:
                 torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_73.pth")
+                logger.info(f"saved the 0.73 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
+            if 0.75 < mean_all_dice < 0.81:
+                torch.save(state_dict, d_options['output'] + f"{d_options['dataset']}_80.pth")
                 logger.info(f"saved the 0.73 model at epoch {epoch}, with acc {mean_all_dice :.3f}")
 
             net.cuda()
