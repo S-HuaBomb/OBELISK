@@ -148,11 +148,11 @@ def main():
 
     optimizer = optim.Adam(net.parameters(), lr=d_options['lr'], weight_decay=0.00001)
     if args.apply_lr_scheduler:
-        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
+        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 0.99)
         # scheduler = ReduceLROnPlateau(optimizer, factor=0.5, min_lr=0.00001, patience=10)
-        # scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
-        #                                             warmup_steps=d_options["warmup_steps"],
-        #                                             total_steps=end_epoch,)
+        scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer,
+                                                    warmup_steps=d_options["warmup_steps"],
+                                                    total_steps=end_epoch,)
 
     if d_options['resume']:
         obelisk = torch.load(d_options['resume'])
