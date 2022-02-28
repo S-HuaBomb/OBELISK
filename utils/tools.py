@@ -3,6 +3,7 @@ import sys
 import logging
 import math
 import numpy as np
+from medpy import metric
 
 import torch
 import torch.nn as nn
@@ -85,6 +86,7 @@ def dice_coeff(outputs, labels):
         intersection = (iflat * tflat).sum()
         dice.append((2. * intersection) / (iflat.sum() + tflat.sum()))
     return np.asarray(dice)
+    # return metric.dc(result=outputs, reference=labels)
 
 
 def dice_coefficient(y_true, y_pred, smooth=0.00001):
