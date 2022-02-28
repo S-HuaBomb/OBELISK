@@ -58,10 +58,10 @@ def main():
                         default="1")
     parser.add_argument("-mov_numbers", dest="mov_numbers", help="list of numbers of moving images",
                         type=lambda s: [int(n) for n in s.split()],
-                        default="10")  # 2 3 4 5 6 7 8 9
+                        default="29")  # 2 3 4 5 6 7 8 9
 
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
-                        default="output/reg_preds/LPBA40/")
+                        default="output/reg_preds/LPBA_71/")
 
     args = parser.parse_args()
     d_options = vars(args)
@@ -143,6 +143,7 @@ def main():
                         save_path.replace("?", f"{save_name}_flow"))
         sitk.WriteImage(sitk.GetImageFromArray(pred_label.short().squeeze().numpy()),
                         save_path.replace("?", f"{save_name}_label"))
+        print(f"warped scan number {save_name} save to {d_options['output']}")
         del pred_flow, pred_img
 
         dice = dice_coeff(pred_label.long().cpu(), fixed_label.cpu())

@@ -44,15 +44,15 @@ def main():
     parser.add_argument("-with_BN", help="OBELISK Reg_Net with BN or not", action="store_true")
 
     parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
-                        default="preprocess/datasets/process_cts",
-                        required=False)
+                        default=r"D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\train"
+                        )
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default='preprocess/datasets/process_labels')
+                        default=r'D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\label')
     parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",  # img?_bcv_CT.nii.gz
-                        default='pancreas_ct?.nii.gz')
+                        default='S?.delineation.skullstripped.nii.gz')
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="label_ct?.nii.gz")
+                        default="S?.delineation.structure.label.nii.gz")
     parser.add_argument("-fix_number", dest="fix_number", help="number of fixed image",
                         type=lambda s: [int(n) for n in s.split()],
                         default="7")
@@ -90,6 +90,8 @@ def main():
         full_res = [144, 144, 144]
     elif d_options['dataset'] == 'bcv':
         full_res = [192, 160, 192]
+    elif d_options['dataset'] == 'lpba':
+        full_res = [160, 192, 160]
 
     # load pretrained OBELISK model
     if args.with_BN:
@@ -167,6 +169,7 @@ def main():
                                  label_folder=label_folder,
                                  label_name=label_name,
                                  scannumbers=args.mov_numbers,
+                                 img_transform=None,
                                  for_inf=True)
         test_loader = DataLoader(dataset=test_dataset, batch_size=1)
 

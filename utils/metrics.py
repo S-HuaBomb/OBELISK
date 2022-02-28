@@ -9,6 +9,10 @@ def hd95(gt, pred):
     return metric.hd95(result=pred, reference=gt, voxelspacing=1.5)
 
 
+def dice(gt, pred):
+    return metric.dc(result=pred, reference=gt)
+
+
 def Get_Jac(displacement):
     '''
     compute the Jacobian determinant to find out the smoothness of the u.

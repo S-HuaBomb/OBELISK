@@ -35,28 +35,40 @@ def main():
     # read/parse user command line input
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-dataset", dest="dataset", choices=['tcia', 'visceral'], default='tcia', required=False)
+    parser.add_argument("-dataset", dest="dataset", choices=['tcia', 'bcv', 'lpba'], default='lpba', required=False)
     # parser.add_argument("-fold", dest="fold", help="number of training fold", default=1, required=True)
     parser.add_argument("-model", dest="model", help="filename of pytorch pth model",
-                        default='checkpoints/obeliskhybrid_tcia_fold1_raw.pth',  # models/obeliskhybrid_tcia_fold1.pth
+                        default='output/lpba_seg_total_lre/lpba_80.pth',
+                        # models/obeliskhybrid_tcia_fold1.pth, checkpoints/obeliskhybrid_tcia_fold1_raw.pth
                         )
     parser.add_argument("-old_model",dest="old_model", action="store_true", help="weather I want to load an old model")
+    parser.add_argument("-img_transform", dest="img_transform", choices=['max-min', 'mean-std', 'old-way', 'None'],
+                        default='None',  # mean-std
+                        type=lambda s: None if s in ['None', 'none', ''] else s,
+                        help="what scale type to transform the image")
 
     parser.add_argument("-input", dest="input", help="nii.gz CT volume to segment",
-                        default="preprocess/datasets/process_cts",
-                        required=False)
+                        default=r"D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\train",
+                        # "preprocess/datasets/process_cts",
+                        )
     parser.add_argument("-img_name", dest="img_name",
                         help="prototype scan filename i.e. pancreas_ct?.nii.gz",  # img?_bcv_CT.nii.gz
-                        default='pancreas_ct?.nii.gz')
+                        default="S?.delineation.skullstripped.nii.gz"
+                        # 'pancreas_ct?.nii.gz'
+                        )
     parser.add_argument("-label_name", dest="label_name", help="prototype segmentation name i.e. label_ct?.nii.gz",
-                        default="label_ct?.nii.gz")
+                        default="S?.delineation.structure.label.nii.gz"
+                        # "label_ct?.nii.gz"
+                        )
     parser.add_argument("-output", dest="output", help="nii.gz label output prediction",
-                        default="output/seg_preds/TCIA_old/")
+                        default="output/seg_preds/LPBA_80e/")
     parser.add_argument("-groundtruth", dest="groundtruth", help="nii.gz groundtruth segmentation",
-                        default="preprocess/datasets/process_labels")
+                        default=r"D:\code_sources\from_github\Medical Images Seg & Reg\MICCAI2020\vm_troch\dataset\LPBA40\label"
+                        # "preprocess/datasets/process_labels"
+                        )
     parser.add_argument("-inf_numbers", dest="inf_numbers", help="list of numbers of images for inference",
                         type=lambda s: [int(n) for n in s.split()],
-                        default="1 2 3 4 5 6 7 8 9 10")
+                        default="1 20 27")
 
     options = parser.parse_args()
     d_options = vars(options)
@@ -69,10 +81,13 @@ def main():
 
     if d_options['dataset'] == 'tcia':
         class_num = 9
-        full_res = torch.tensor([144, 144, 144]).long()
+        full_res = [144, 144, 144]
     elif d_options['dataset'] == 'bcv':
         class_num = 5
-        full_res = torch.tensor([192, 160, 192]).long()
+        full_res = [192, 160, 192]
+    elif d_options['dataset'] == 'lpba':
+        class_num = 55
+        full_res = [160, 192, 160]
 
     # load pretrained OBELISK model
     net = Obelisk_Unet(class_num, full_res)  # has 8 anatomical foreground labels
@@ -121,13 +136,13 @@ def main():
             seg_val = None
         inference(img_val, seg_val, save_name='')
     elif os.path.isdir(d_options['input']):
+        scale_type = "old-way" if d_options['old_model'] else d_options['img_transform']
         test_dataset = MyDataset(image_folder=d_options['input'],
                                  image_name=d_options['img_name'],
                                  label_folder=d_options['groundtruth'],
                                  label_name=d_options['label_name'],
                                  scannumbers=d_options['inf_numbers'],
-                                 img_transform=ImgTransform(scale_type="old-way"
-                                               if d_options['old_model'] else "mean-std"),
+                                 img_transform=ImgTransform(scale_type=scale_type),
                                  for_inf=True)
         test_loader = DataLoader(dataset=test_dataset, batch_size=1)
 
